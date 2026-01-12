@@ -35,19 +35,18 @@ class ClonezillaRestorer:
         partitions = []
         seen_base_names = set()
         
-        # Look for partition image files (format: diskname-partition.filesystem-ptcl-img.gz*)
-        for file in self.backup_dir.glob("*-ptcl-img.gz*"):
+        # Look for all files matching the pattern
+        all_files = list(self.backup_dir.glob("*-ptcl-img.gz*"))
+        
+        for file in all_files:
             # Skip directories
             if file.is_dir():
-                continue
-                
-            # Skip .aa, .ab, .ac parts - we'll handle the base file
-            if file.suffix in ['.aa', '.ab', '.ac', '.ad', '.ae', '.af']:
                 continue
             
             name = file.name
             # Extract partition info
             if '-ptcl-img.gz' in name:
+                # Get base name (everything before -ptcl-img.gz)
                 base_name = name.split('-ptcl-img.gz')[0]
                 
                 # Skip if we already processed this base name
@@ -55,13 +54,17 @@ class ClonezillaRestorer:
                     continue
                 seen_base_names.add(base_name)
                 
-                # Check if this is split into multiple parts (only include actual files)
-                parts = sorted([f for f in self.backup_dir.glob(f"{base_name}-ptcl-img.gz*") if f.is_file()])
+                # Find all files for this partition (base + split parts)
+                # Only include actual files, not directories
+                parts = sorted([
+                    f for f in self.backup_dir.glob(f"{base_name}-ptcl-img.gz*") 
+                    if f.is_file()
+                ])
                 
                 if not parts:
                     continue
                 
-                # Parse filesystem type
+                # Parse filesystem type from base name
                 fs_type = None
                 if '.vfat-' in base_name or '.fat-' in base_name:
                     fs_type = 'vfat'
