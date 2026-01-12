@@ -16,9 +16,24 @@ ai_provider: ollama
 # Chunking Configuration
 # ============================================================================
 # Maximum size of each chunk in characters when processing large directories
-# Smaller chunks = more API calls but better memory usage
-# Larger chunks = fewer calls but may exceed model context limits
-# Recommended: 2000-8000
+# 
+# IMPORTANT: For large datasets (100GB+), use MUCH larger chunks!
+# 
+# Context window limits (approximate):
+# - GPT-4 Turbo: 128K tokens (~400K chars) - Use chunk_size: 300000-400000
+# - Claude 3.5 Sonnet: 200K tokens (~600K chars) - Use chunk_size: 500000-600000
+# - Gemini 1.5 Pro: 1M tokens (~3M chars) - Use chunk_size: 2000000+
+# - Ollama qwen2.5:32b: 32K tokens (~100K chars) - Use chunk_size: 80000-100000
+# - Ollama llama3.2: 128K tokens (~400K chars) - Use chunk_size: 300000-400000
+#
+# Recommended settings by dataset size:
+# - Small (< 1GB): 4000-8000
+# - Medium (1-10GB): 20000-50000
+# - Large (10-100GB): 100000-200000
+# - Very Large (100GB+): 300000-600000 (requires cloud AI with large context)
+#
+# Example: 650GB dataset with 560K chunks @ 4000 = 16 days
+#          650GB dataset with 4K chunks @ 500000 = ~3 hours (125x faster!)
 chunk_size: 4000
 
 # ============================================================================

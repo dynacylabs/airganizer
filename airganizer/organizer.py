@@ -1,6 +1,8 @@
 """Main organizer module for generating directory structures."""
 
 import json
+import tempfile
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -36,6 +38,7 @@ class StructureOrganizer:
         self.chunker = TreeChunker(max_chunk_size=chunk_size)
         self.theoretical_structure = {'dirs': {}, 'files': []}
         self.debug = debug
+        self.temp_file = None
     
     def organize(
         self,
@@ -52,59 +55,97 @@ class StructureOrganizer:
         Returns:
             The theoretical directory structure
         """
-        # Split into chunks
-        if self.debug:
-            print("[DEBUG] Starting chunking process...")
-        
-        chunks = self.chunker.chunk_tree(file_tree)
-        total_chunks = len(chunks)
+        # Create temporary file for progress tracking
+        fd, self.temp_file = tempfile.mkstemp(suffix='.json', prefix='airganizer_progress_')
+        os.close(fd)  # Close the file descriptor, we'll use the path
         
         if self.debug:
-            print(f"[DEBUG] Created {total_chunks} chunks")
-            for i, chunk in enumerate(chunks, 1):
-                chunk_json = json.dumps(chunk)
-                print(f"[DEBUG] Chunk {i} size: {len(chunk_json)} chars")
+            print(f"[DEBUG] Created temporary progress file: {self.temp_file}")
         
-        print(f"Processing {total_chunks} chunks...")
-        
-        # Process each chunk
-        for i, chunk in enumerate(chunks, 1):
-            if progress_callback:
-                progress_callback(i, total_chunks, chunk)
-            else:
-                print(f"\nProcessing chunk {i}/{total_chunks}...")
+        try:
+            # Split into chunks
+            if self.debug:
+                print("[DEBUG] Starting chunking process...")
+            
+            chunks = self.chunker.chunk_tree(file_tree)
+            total_chunks = len(chunks)
             
             if self.debug:
-                chunk_json = json.dumps(chunk)
-                print(f"[DEBUG] Chunk {i} content preview:")
-                print(f"[DEBUG]   Files in chunk: {len(chunk.get('files', []))}")
-                print(f"[DEBUG]   Dirs in chunk: {len(chunk.get('dirs', {}))}")
-                print(f"[DEBUG] Sending to AI provider...")
+                print(f"[DEBUG] Created {total_chunks} chunks")
+                for i, chunk in enumerate(chunks, 1):
+                    chunk_json = json.dumps(chunk)
+                    print(f"[DEBUG] Chunk {i} size: {len(chunk_json)} chars")
             
-            # Feed to AI
-            try:
-                self.theoretical_structure = self.ai_provider.generate_structure(
-                    file_chunk=chunk,
-                    current_structure=self.theoretical_structure,
-                    debug=self.debug
-                )
+            print(f"Processing {total_chunks} chunks...")
+            
+            # Process each chunk
+            for i, chunk in enumerate(chunks, 1):
+                if progress_callback:
+                    progress_callback(i, total_chunks, chunk)
+                else:
+                    print(f"\nProcessing chunk {i}/{total_chunks}...")
                 
                 if self.debug:
-                    print(f"[DEBUG] Received response from AI")
-                    print(f"[DEBUG] Current structure has {len(self.theoretical_structure.get('dirs', {}))} top-level categories")
+                    chunk_json = json.dumps(chunk)
+                    print(f"[DEBUG] Chunk {i} content preview:")
+                    print(f"[DEBUG]   Files in chunk: {len(chunk.get('files', []))}")
+                    print(f"[DEBUG]   Dirs in chunk: {len(chunk.get('dirs', {}))}")
+                    print(f"[DEBUG] Sending to AI provider...")
                 
-                if not progress_callback:
-                    print(f"  ✓ Structure updated")
+                # Feed to AI
+                try:
+                    self.theoretical_structure = self.ai_provider.generate_structure(
+                        file_chunk=chunk,
+                        current_structure=self.theoretical_structure,
+                        debug=self.debug
+                    )
                     
+                    # Write current structure to temp file after each iteration
+                    self._write_temp_structure()
+                    
+                    if self.debug:
+                        print(f"[DEBUG] Received response from AI")
+                        print(f"[DEBUG] Current structure has {len(self.theoretical_structure.get('dirs', {}))} top-level categories")
+                        print(f"[DEBUG] Updated temporary file: {self.temp_file}")
+                    
+                    if not progress_callback:
+                        print(f"  ✓ Structure updated")
+                        
+                except Exception as e:
+                    print(f"  ✗ Error processing chunk {i}: {e}")
+                    if self.debug:
+                        import traceback
+                        print(f"[DEBUG] Full error traceback:")
+                        traceback.print_exc()
+                    continue
+            
+            return self.theoretical_structure
+            
+        finally:
+            # Always clean up temp file
+            self._cleanup_temp_file()
+    
+    def _write_temp_structure(self):
+        """Write current theoretical structure to temporary file."""
+        if self.temp_file:
+            try:
+                with open(self.temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.theoretical_structure, f, indent=2)
             except Exception as e:
-                print(f"  ✗ Error processing chunk {i}: {e}")
                 if self.debug:
-                    import traceback
-                    print(f"[DEBUG] Full error traceback:")
-                    traceback.print_exc()
-                continue
-        
-        return self.theoretical_structure
+                    print(f"[DEBUG] Warning: Failed to write temp file: {e}")
+    
+    def _cleanup_temp_file(self):
+        """Remove temporary progress file."""
+        if self.temp_file and os.path.exists(self.temp_file):
+            try:
+                os.unlink(self.temp_file)
+                if self.debug:
+                    print(f"[DEBUG] Cleaned up temporary file: {self.temp_file}")
+            except Exception as e:
+                if self.debug:
+                    print(f"[DEBUG] Warning: Failed to delete temp file: {e}")
+            self.temp_file = None
     
     def save_structure(self, output_path: str):
         """
