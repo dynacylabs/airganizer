@@ -38,6 +38,10 @@ class ClonezillaRestorer:
         # Look for all files matching the pattern
         all_files = list(self.backup_dir.glob("*-ptcl-img.gz*"))
         
+        print(f"\n🔍 Debug: Found {len(all_files)} items matching *-ptcl-img.gz*")
+        for f in all_files:
+            print(f"  - {f.name} (is_dir: {f.is_dir()}, is_file: {f.is_file()})")
+        
         for file in all_files:
             # Skip directories
             if file.is_dir():
