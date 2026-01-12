@@ -33,9 +33,14 @@ class ClonezillaRestorer:
     def find_partitions(self):
         """Find all partition images in the backup"""
         partitions = []
+        seen_base_names = set()
         
         # Look for partition image files (format: diskname-partition.filesystem-ptcl-img.gz*)
         for file in self.backup_dir.glob("*-ptcl-img.gz*"):
+            # Skip directories
+            if file.is_dir():
+                continue
+                
             # Skip .aa, .ab, .ac parts - we'll handle the base file
             if file.suffix in ['.aa', '.ab', '.ac', '.ad', '.ae', '.af']:
                 continue
@@ -45,8 +50,16 @@ class ClonezillaRestorer:
             if '-ptcl-img.gz' in name:
                 base_name = name.split('-ptcl-img.gz')[0]
                 
-                # Check if this is split into multiple parts
-                parts = sorted(self.backup_dir.glob(f"{base_name}-ptcl-img.gz*"))
+                # Skip if we already processed this base name
+                if base_name in seen_base_names:
+                    continue
+                seen_base_names.add(base_name)
+                
+                # Check if this is split into multiple parts (only include actual files)
+                parts = sorted([f for f in self.backup_dir.glob(f"{base_name}-ptcl-img.gz*") if f.is_file()])
+                
+                if not parts:
+                    continue
                 
                 # Parse filesystem type
                 fs_type = None
@@ -75,6 +88,10 @@ class ClonezillaRestorer:
         print(f"\n📦 Extracting partition: {partition['name']}")
         print(f"   Filesystem: {partition['fs_type'] or 'unknown'}")
         print(f"   Split files: {len(partition['files'])}")
+        
+        # Debug: show what files we found
+        for f in partition['files']:
+            print(f"   Found: {f.name} (exists: {f.exists()}, is_file: {f.is_file()})")
         
         output_img = self.image_dir / f"{partition['name']}.img"
         
