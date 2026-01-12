@@ -42,8 +42,8 @@ def try_extract_file(file_path):
         extraction_dir = get_extraction_dir(file_path)
         extraction_dir.mkdir(exist_ok=True)
         
-        # Try to extract the archive
-        patoolib.extract_archive(str(file_path), outdir=str(extraction_dir))
+        # Try to extract the archive (verbosity=-1 suppresses output)
+        patoolib.extract_archive(str(file_path), outdir=str(extraction_dir), verbosity=-1)
         
         # Collect all new files from extraction directory
         new_files = collect_files(extraction_dir)
