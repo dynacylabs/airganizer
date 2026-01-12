@@ -9,6 +9,7 @@ Original archive files are deleted after successful extraction.
 
 import os
 import sys
+import time
 from pathlib import Path
 from tqdm import tqdm
 import patoolib
@@ -77,10 +78,13 @@ def main():
     
     print(f"Found {total_files} files to process\n")
     
+    start_time = time.time()
     processed = 0
     extracted = 0
+    new_files_created = 0
     
-    with tqdm(total=total_files, desc="Processing files", unit="file") as pbar:
+    with tqdm(total=total_files, desc="Processing files", unit="file", 
+              file=sys.stdout, mininterval=0.1, miniters=1) as pbar:
         while file_queue:
             file_path = file_queue.popleft()
             
@@ -91,6 +95,8 @@ def main():
                 if new_files:
                     # Archive was extracted successfully
                     extracted += 1
+                    new_files_created += len(new_files)
+                    pbar.write(f"✓ Extracted: {os.path.basename(file_path)} ({len(new_files)} files)")
                     # Add new files to queue and update total count
                     file_queue.extend(new_files)
                     total_files += len(new_files) - 1  # -1 because we deleted the original
@@ -100,7 +106,21 @@ def main():
             processed += 1
             pbar.update(1)
     
-    print(f"\n✓ Done! Processed {processed} files, extracted {extracted} archives.")
+    elapsed_time = time.time() - start_time
+    
+    # Print statistics
+    print("\n" + "=" * 50)
+    print("EXTRACTION STATISTICS")
+    print("=" * 50)
+    print(f"Total files processed:     {processed:,}")
+    print(f"Archives extracted:        {extracted:,}")
+    print(f"New files created:         {new_files_created:,}")
+    print(f"Files remaining:           {processed - extracted + new_files_created:,}")
+    print(f"Time elapsed:              {elapsed_time:.2f} seconds")
+    if elapsed_time > 0:
+        print(f"Processing speed:          {processed / elapsed_time:.1f} files/sec")
+    print("=" * 50)
+    print("✓ Done!")
 
 
 if __name__ == "__main__":
