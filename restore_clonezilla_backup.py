@@ -109,47 +109,48 @@ class ClonezillaRestorer:
         for f in partition['files']:
             print(f"   Found: {f.name} (exists: {f.exists()}, is_file: {f.is_file()})")
         
-        output_img = self.image_dir / f"{partition['name']}.img"
+        # Check the first file's format
+        if partition['files']:
+            first_file = partition['files'][0]
+            try:
+                result = subprocess.run(['file', str(first_file)], capture_output=True, text=True)
+                print(f"   File type: {result.stdout.strip()}")
+            except:
+                pass
         
-        # Use gunzip -c for cross-platform compatibility (works on both Linux and macOS)
-        decompress_cmd = ['gunzip', '-c']
+        output_img = self.image_dir / f"{partition['name']}.img"
         
         try:
             if partition['is_split']:
                 # Concatenate split files FIRST, then decompress the combined stream
                 print(f"   Combining and decompressing {len(partition['files'])} split files...")
                 
-                # Use cat to concatenate, then pipe to gunzip
-                cat_process = subprocess.Popen(
-                    ['cat'] + [str(f) for f in partition['files']],
-                    stdout=subprocess.PIPE
-                )
-                gunzip_process = subprocess.Popen(
-                    decompress_cmd,
-                    stdin=cat_process.stdout,
-                    stdout=subprocess.PIPE
-                )
-                cat_process.stdout.close()  # Allow cat to receive SIGPIPE
+                # First concatenate all parts into a single temp file
+                temp_gz = self.image_dir / f"{partition['name']}.gz"
+                with open(temp_gz, 'wb') as outfile:
+                    for part_file in partition['files']:
+                        print(f"   - Concatenating {part_file.name}...")
+                        with open(part_file, 'rb') as infile:
+                            chunk_size = 1024 * 1024  # 1MB chunks
+                            while True:
+                                chunk = infile.read(chunk_size)
+                                if not chunk:
+                                    break
+                                outfile.write(chunk)
                 
+                print(f"   - Decompressing concatenated file...")
+                # Now decompress the concatenated file
                 with open(output_img, 'wb') as outfile:
-                    chunk_size = 1024 * 1024  # 1MB chunks
-                    while True:
-                        chunk = gunzip_process.stdout.read(chunk_size)
-                        if not chunk:
-                            break
-                        outfile.write(chunk)
+                    subprocess.run(['gunzip', '-c', str(temp_gz)], stdout=outfile, check=True)
                 
-                gunzip_process.wait()
-                cat_process.wait()
+                # Clean up temp file
+                temp_gz.unlink()
                 
-                if gunzip_process.returncode != 0:
-                    raise subprocess.CalledProcessError(gunzip_process.returncode, decompress_cmd)
             else:
                 # Single file - just decompress
                 print(f"   Decompressing...")
-                cmd = decompress_cmd + [str(partition['files'][0])]
                 with open(output_img, 'wb') as outfile:
-                    subprocess.run(cmd, stdout=outfile, check=True)
+                    subprocess.run(['gunzip', '-c', str(partition['files'][0])], stdout=outfile, check=True)
             
             print(f"   ✓ Extracted to: {output_img}")
             return output_img
