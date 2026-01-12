@@ -42,6 +42,15 @@ class ClonezillaRestorer:
         for f in all_files:
             print(f"  - {f.name} (is_dir: {f.is_dir()}, is_file: {f.is_file()})")
         
+        # Also check inside directories that match the pattern
+        for item in self.backup_dir.glob("*-ptcl-img.gz"):
+            if item.is_dir():
+                print(f"  Checking inside directory: {item.name}")
+                for subfile in item.iterdir():
+                    if subfile.is_file():
+                        print(f"    - {subfile.name}")
+                        all_files.append(subfile)
+        
         for file in all_files:
             # Skip directories
             if file.is_dir():
@@ -107,23 +116,34 @@ class ClonezillaRestorer:
         
         try:
             if partition['is_split']:
-                # Concatenate split files and decompress
-                print(f"   Combining {len(partition['files'])} split files...")
+                # Concatenate split files FIRST, then decompress the combined stream
+                print(f"   Combining and decompressing {len(partition['files'])} split files...")
+                
+                # Use cat to concatenate, then pipe to gunzip
+                cat_process = subprocess.Popen(
+                    ['cat'] + [str(f) for f in partition['files']],
+                    stdout=subprocess.PIPE
+                )
+                gunzip_process = subprocess.Popen(
+                    decompress_cmd,
+                    stdin=cat_process.stdout,
+                    stdout=subprocess.PIPE
+                )
+                cat_process.stdout.close()  # Allow cat to receive SIGPIPE
+                
                 with open(output_img, 'wb') as outfile:
-                    for part_file in partition['files']:
-                        print(f"   - Processing {part_file.name}...")
-                        # Use gunzip -c to decompress each part and write to output
-                        cmd = decompress_cmd + [str(part_file)]
-                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-                        chunk_size = 1024 * 1024  # 1MB chunks
-                        while True:
-                            chunk = proc.stdout.read(chunk_size)
-                            if not chunk:
-                                break
-                            outfile.write(chunk)
-                        proc.wait()
-                        if proc.returncode != 0:
-                            raise subprocess.CalledProcessError(proc.returncode, cmd)
+                    chunk_size = 1024 * 1024  # 1MB chunks
+                    while True:
+                        chunk = gunzip_process.stdout.read(chunk_size)
+                        if not chunk:
+                            break
+                        outfile.write(chunk)
+                
+                gunzip_process.wait()
+                cat_process.wait()
+                
+                if gunzip_process.returncode != 0:
+                    raise subprocess.CalledProcessError(gunzip_process.returncode, decompress_cmd)
             else:
                 # Single file - just decompress
                 print(f"   Decompressing...")
