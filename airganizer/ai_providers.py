@@ -12,7 +12,8 @@ class AIProvider(ABC):
     def generate_structure(
         self,
         file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        current_structure: Dict[str, Any],
+        debug: bool = False
     ) -> Dict[str, Any]:
         """
         Generate or refine directory structure based on file chunk.
@@ -20,6 +21,7 @@ class AIProvider(ABC):
         Args:
             file_chunk: Chunk of the actual file tree
             current_structure: Current theoretical directory structure
+            debug: Enable debug output
             
         Returns:
             Updated theoretical directory structure
@@ -67,12 +69,17 @@ class OpenAIProvider(AIProvider):
     def generate_structure(
         self,
         file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        current_structure: Dict[str, Any],
+        debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using OpenAI."""
         client = self._get_client()
         
         prompt = self._build_prompt(file_chunk, current_structure)
+        
+        if debug:
+            print(f"[DEBUG] OpenAI: Sending request to {self.model}...")
+            print(f"[DEBUG] OpenAI: Prompt length: {len(prompt)} chars")
         
         response = client.chat.completions.create(
             model=self.model,
@@ -89,6 +96,10 @@ class OpenAIProvider(AIProvider):
             response_format={"type": "json_object"},
             temperature=0.3
         )
+        
+        if debug:
+            print(f"[DEBUG] OpenAI: Received response")
+            print(f"[DEBUG] OpenAI: Response length: {len(response.choices[0].message.content)} chars")
         
         result = json.loads(response.choices[0].message.content)
         return result.get('structure', current_structure)
@@ -175,12 +186,17 @@ class AnthropicProvider(AIProvider):
     def generate_structure(
         self,
         file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        current_structure: Dict[str, Any],
+        debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using Anthropic."""
         client = self._get_client()
         
         prompt = self._build_prompt(file_chunk, current_structure)
+        
+        if debug:
+            print(f"[DEBUG] Anthropic: Sending request to {self.model}...")
+            print(f"[DEBUG] Anthropic: Prompt length: {len(prompt)} chars")
         
         response = client.messages.create(
             model=self.model,
@@ -197,6 +213,10 @@ class AnthropicProvider(AIProvider):
         # Extract JSON from response
         content = response.content[0].text
         
+        if debug:
+            print(f"[DEBUG] Anthropic: Received response")
+            print(f"[DEBUG] Anthropic: Response length: {len(content)} chars")
+        
         # Try to parse JSON from the response
         try:
             # Look for JSON in code blocks or direct JSON
@@ -207,11 +227,16 @@ class AnthropicProvider(AIProvider):
             else:
                 json_str = content.strip()
             
+            if debug:
+                print(f"[DEBUG] Anthropic: Parsing JSON response...")
+            
             result = json.loads(json_str)
             return result.get('structure', current_structure)
         except json.JSONDecodeError:
             # Fallback: return current structure if parsing fails
             print(f"Warning: Failed to parse AI response: {content}")
+            if debug:
+                print(f"[DEBUG] Anthropic: JSON parse failed, returning current structure")
             return current_structure
     
     def test_connection(self) -> bool:
@@ -305,12 +330,18 @@ class OllamaProvider(AIProvider):
     def generate_structure(
         self,
         file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        current_structure: Dict[str, Any],
+        debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using Ollama."""
         client = self._get_client()
         
         prompt = self._build_prompt(file_chunk, current_structure)
+        
+        if debug:
+            print(f"[DEBUG] Ollama: Sending request to {self.model}...")
+            print(f"[DEBUG] Ollama: Prompt length: {len(prompt)} chars")
+            print(f"[DEBUG] Ollama: Using Metal/GPU acceleration (if available)")
         
         response = client.chat(
             model=self.model,
@@ -334,11 +365,20 @@ class OllamaProvider(AIProvider):
         # Extract JSON from response
         content = response['message']['content']
         
+        if debug:
+            print(f"[DEBUG] Ollama: Received response")
+            print(f"[DEBUG] Ollama: Response length: {len(content)} chars")
+            print(f"[DEBUG] Ollama: Parsing JSON response...")
+        
         try:
             result = json.loads(content)
+            if debug:
+                print(f"[DEBUG] Ollama: Successfully parsed JSON")
             return result.get('structure', current_structure)
         except json.JSONDecodeError:
             print(f"Warning: Failed to parse Ollama response: {content}")
+            if debug:
+                print(f"[DEBUG] Ollama: JSON parse failed, returning current structure")
             return current_structure
     
     def test_connection(self) -> bool:

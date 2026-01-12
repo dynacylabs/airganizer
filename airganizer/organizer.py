@@ -21,7 +21,8 @@ class StructureOrganizer:
     def __init__(
         self,
         ai_provider: AIProvider,
-        chunk_size: int = 4000
+        chunk_size: int = 4000,
+        debug: bool = False
     ):
         """
         Initialize the organizer.
@@ -29,10 +30,12 @@ class StructureOrganizer:
         Args:
             ai_provider: The AI provider to use for structure generation
             chunk_size: Maximum size of each chunk in characters
+            debug: Enable debug output
         """
         self.ai_provider = ai_provider
         self.chunker = TreeChunker(max_chunk_size=chunk_size)
         self.theoretical_structure = {'dirs': {}, 'files': []}
+        self.debug = debug
     
     def organize(
         self,
@@ -50,8 +53,17 @@ class StructureOrganizer:
             The theoretical directory structure
         """
         # Split into chunks
+        if self.debug:
+            print("[DEBUG] Starting chunking process...")
+        
         chunks = self.chunker.chunk_tree(file_tree)
         total_chunks = len(chunks)
+        
+        if self.debug:
+            print(f"[DEBUG] Created {total_chunks} chunks")
+            for i, chunk in enumerate(chunks, 1):
+                chunk_json = json.dumps(chunk)
+                print(f"[DEBUG] Chunk {i} size: {len(chunk_json)} chars")
         
         print(f"Processing {total_chunks} chunks...")
         
@@ -62,18 +74,34 @@ class StructureOrganizer:
             else:
                 print(f"\nProcessing chunk {i}/{total_chunks}...")
             
+            if self.debug:
+                chunk_json = json.dumps(chunk)
+                print(f"[DEBUG] Chunk {i} content preview:")
+                print(f"[DEBUG]   Files in chunk: {len(chunk.get('files', []))}")
+                print(f"[DEBUG]   Dirs in chunk: {len(chunk.get('dirs', {}))}")
+                print(f"[DEBUG] Sending to AI provider...")
+            
             # Feed to AI
             try:
                 self.theoretical_structure = self.ai_provider.generate_structure(
                     file_chunk=chunk,
-                    current_structure=self.theoretical_structure
+                    current_structure=self.theoretical_structure,
+                    debug=self.debug
                 )
+                
+                if self.debug:
+                    print(f"[DEBUG] Received response from AI")
+                    print(f"[DEBUG] Current structure has {len(self.theoretical_structure.get('dirs', {}))} top-level categories")
                 
                 if not progress_callback:
                     print(f"  ✓ Structure updated")
                     
             except Exception as e:
                 print(f"  ✗ Error processing chunk {i}: {e}")
+                if self.debug:
+                    import traceback
+                    print(f"[DEBUG] Full error traceback:")
+                    traceback.print_exc()
                 continue
         
         return self.theoretical_structure

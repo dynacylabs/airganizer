@@ -75,6 +75,12 @@ def main():
         help='Maximum chunk size in characters (default: 4000)'
     )
     
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug output'
+    )
+    
     args = parser.parse_args()
     
     # Handle init-config
@@ -146,14 +152,30 @@ def main():
             print("✓ Connection successful\n")
             
             # Build file tree
-            print("Building file tree...")
+            if args.debug:
+                print("[DEBUG] Building file tree...")
+                print(f"[DEBUG] Root path: {scanner.root_path}")
+            else:
+                print("Building file tree...")
+            
             tree = scanner.build_tree()
+            
+            if args.debug:
+                tree_json = json.dumps(tree)
+                print(f"[DEBUG] Tree size: {len(tree_json)} characters")
+                print(f"[DEBUG] Root files: {len(tree.get('files', []))}")
+                print(f"[DEBUG] Root directories: {len(tree.get('dirs', {}))}")
             
             # Create organizer
             chunk_size = args.chunk_size if args.chunk_size else config.get('chunk_size', 4000)
+            
+            if args.debug:
+                print(f"[DEBUG] Chunk size: {chunk_size} characters")
+            
             organizer = StructureOrganizer(
                 ai_provider=ai_provider,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                debug=args.debug
             )
             
             # Generate structure
