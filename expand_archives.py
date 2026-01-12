@@ -36,7 +36,8 @@ def collect_files(directory):
 def try_extract_file(file_path):
     """
     Try to extract a file using patool.
-    Returns list of new files created if extraction successful, empty list otherwise.
+    Returns tuple: (list of new files, error_type)
+    error_type can be: None (success), 'password', 'corrupted', 'not_archive'
     """
     try:
         extraction_dir = get_extraction_dir(file_path)
@@ -51,10 +52,18 @@ def try_extract_file(file_path):
         # Delete the original archive file after successful extraction
         os.remove(file_path)
         
-        return new_files
-    except Exception:
-        # Not an archive or extraction failed - silently continue
-        return []
+        return (new_files, None)
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        # Determine error type
+        if 'password' in error_msg or 'encrypted' in error_msg:
+            return ([], 'password')
+        elif 'corrupt' in error_msg or 'damaged' in error_msg or 'invalid' in error_msg:
+            return ([], 'corrupted')
+        else:
+            # Not an archive or other error
+            return ([], 'not_archive')
 
 
 def main():
@@ -82,6 +91,8 @@ def main():
     processed = 0
     extracted = 0
     new_files_created = 0
+    skipped_password = 0
+    skipped_corrupted = 0
     
     with tqdm(total=total_files, desc="Processing files", unit="file", 
               file=sys.stdout, mininterval=0.1, miniters=1) as pbar:
@@ -90,7 +101,7 @@ def main():
             
             # Check if file still exists (might have been deleted as part of extraction)
             if os.path.exists(file_path):
-                new_files = try_extract_file(file_path)
+                new_files, error_type = try_extract_file(file_path)
                 
                 if new_files:
                     # Archive was extracted successfully
@@ -102,6 +113,12 @@ def main():
                     total_files += len(new_files) - 1  # -1 because we deleted the original
                     pbar.total = total_files
                     pbar.refresh()
+                elif error_type == 'password':
+                    skipped_password += 1
+                    pbar.write(f"⚠ Skipped (password protected): {os.path.basename(file_path)}")
+                elif error_type == 'corrupted':
+                    skipped_corrupted += 1
+                    pbar.write(f"⚠ Skipped (corrupted): {os.path.basename(file_path)}")
             
             processed += 1
             pbar.update(1)
@@ -115,6 +132,8 @@ def main():
     print(f"Total files processed:     {processed:,}")
     print(f"Archives extracted:        {extracted:,}")
     print(f"New files created:         {new_files_created:,}")
+    print(f"Skipped (password):        {skipped_password:,}")
+    print(f"Skipped (corrupted):       {skipped_corrupted:,}")
     print(f"Files remaining:           {processed - extracted + new_files_created:,}")
     print(f"Time elapsed:              {elapsed_time:.2f} seconds")
     if elapsed_time > 0:
