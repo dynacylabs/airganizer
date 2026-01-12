@@ -13,6 +13,12 @@ import argparse
 import tempfile
 from pathlib import Path
 
+try:
+    import patoolib
+    HAS_PATOOL = True
+except ImportError:
+    HAS_PATOOL = False
+
 
 class ClonezillaRestorer:
     def __init__(self, backup_dir, output_dir=None):
@@ -109,64 +115,14 @@ class ClonezillaRestorer:
         for f in partition['files']:
             print(f"   Found: {f.name} (exists: {f.exists()}, is_file: {f.is_file()})")
         
-        # Check the first file's format
-        compression_type = None
-        if partition['files']:
-            first_file = partition['files'][0]
-            try:
-                result = subprocess.run(['file', str(first_file)], capture_output=True, text=True)
-                file_type = result.stdout.strip()
-                print(f"   File type: {file_type}")
-                
-                # Detect compression type
-                if 'gzip' in file_type.lower():
-                    compression_type = 'gzip'
-                elif 'bzip2' in file_type.lower():
-                    compression_type = 'bzip2'
-                elif 'xz' in file_type.lower() or 'lzma' in file_type.lower():
-                    compression_type = 'xz'
-                elif 'zstandard' in file_type.lower():
-                    compression_type = 'zstd'
-                else:
-                    # Try to detect by reading first few bytes
-                    with open(first_file, 'rb') as f:
-                        magic = f.read(6)
-                        if magic[:2] == b'\x1f\x8b':
-                            compression_type = 'gzip'
-                        elif magic[:3] == b'BZh':
-                            compression_type = 'bzip2'
-                        elif magic[:6] == b'\xfd7zXZ\x00':
-                            compression_type = 'xz'
-                        elif magic[:4] == b'\x28\xb5\x2f\xfd':
-                            compression_type = 'zstd'
-                        else:
-                            print(f"   Warning: Unknown compression (magic bytes: {magic.hex()})...")
-                            print(f"   Trying gzip anyway...")
-                            compression_type = 'gzip'
-            except Exception as e:
-                print(f"   Warning: Could not detect file type: {e}")
-                compression_type = 'gzip'  # Default to gzip
-        
-        print(f"   Detected compression: {compression_type or 'unknown'}")
-        
         output_img = self.image_dir / f"{partition['name']}.img"
-        
-        # Choose decompression command based on type
-        decompress_cmds = {
-            'gzip': ['gunzip', '-c'],
-            'bzip2': ['bunzip2', '-c'],
-            'xz': ['xz', '-d', '-c'],
-            'zstd': ['zstd', '-d', '-c']
-        }
-        decompress_cmd = decompress_cmds.get(compression_type, ['gunzip', '-c'])
         
         try:
             if partition['is_split']:
-                # Concatenate split files FIRST, then decompress the combined stream
-                print(f"   Combining and decompressing {len(partition['files'])} split files...")
-                
-                # First concatenate all parts into a single temp file
+                # Concatenate split files FIRST
+                print(f"   Combining {len(partition['files'])} split files...")
                 temp_compressed = self.image_dir / f"{partition['name']}.compressed"
+                
                 with open(temp_compressed, 'wb') as outfile:
                     for part_file in partition['files']:
                         print(f"   - Concatenating {part_file.name}...")
@@ -178,24 +134,78 @@ class ClonezillaRestorer:
                                     break
                                 outfile.write(chunk)
                 
-                print(f"   - Decompressing with {compression_type}...")
-                # Now decompress the concatenated file
-                with open(output_img, 'wb') as outfile:
-                    result = subprocess.run(decompress_cmd + [str(temp_compressed)], 
-                                          stdout=outfile, stderr=subprocess.PIPE, text=True)
-                    if result.returncode != 0:
-                        print(f"   Error output: {result.stderr}")
-                        raise subprocess.CalledProcessError(result.returncode, decompress_cmd)
-                
-                # Clean up temp file
-                temp_compressed.unlink()
-                
+                compressed_file = temp_compressed
             else:
-                # Single file - just decompress
-                print(f"   Decompressing...")
-                with open(output_img, 'wb') as outfile:
-                    subprocess.run(decompress_cmd + [str(partition['files'][0])], 
-                                 stdout=outfile, check=True)
+                compressed_file = partition['files'][0]
+            
+            # Try to detect compression format
+            try:
+                result = subprocess.run(['file', str(compressed_file)], capture_output=True, text=True)
+                file_type = result.stdout.strip()
+                print(f"   File type: {file_type}")
+            except:
+                pass
+            
+            # Try using patool first (if available)
+            if HAS_PATOOL:
+                try:
+                    print(f"   Decompressing with patool...")
+                    patoolib.extract_archive(str(compressed_file), outdir=str(self.image_dir))
+                    
+                    # Find the extracted file (should be the .img file)
+                    extracted_files = list(self.image_dir.glob(f"{partition['name']}*"))
+                    extracted_files = [f for f in extracted_files if f != compressed_file and f.is_file()]
+                    
+                    if extracted_files:
+                        # Rename to expected output name
+                        extracted_files[0].rename(output_img)
+                        print(f"   ✓ Extracted to: {output_img}")
+                    else:
+                        raise Exception("No extracted file found")
+                    
+                    if partition['is_split']:
+                        temp_compressed.unlink()
+                    
+                    return output_img
+                except Exception as e:
+                    print(f"   Patool extraction failed: {e}")
+                    print(f"   Trying manual decompression...")
+            
+            # Fallback to manual decompression
+            print(f"   Decompressing manually...")
+            
+            # Try different decompression tools
+            decompress_methods = [
+                (['gunzip', '-c'], 'gzip'),
+                (['pigz', '-d', '-c'], 'pigz'),
+                (['lz4', '-d', '-c'], 'lz4'),
+                (['zstd', '-d', '-c'], 'zstd'),
+                (['xz', '-d', '-c'], 'xz'),
+                (['bunzip2', '-c'], 'bzip2'),
+            ]
+            
+            success = False
+            for cmd, name in decompress_methods:
+                try:
+                    print(f"   Trying {name}...")
+                    with open(output_img, 'wb') as outfile:
+                        result = subprocess.run(cmd + [str(compressed_file)], 
+                                              stdout=outfile, stderr=subprocess.PIPE)
+                        if result.returncode == 0:
+                            success = True
+                            print(f"   ✓ Successfully decompressed with {name}")
+                            break
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    print(f"   {name} failed: {e}")
+                    continue
+            
+            if not success:
+                raise Exception("All decompression methods failed")
+            
+            if partition['is_split']:
+                temp_compressed.unlink()
             
             print(f"   ✓ Extracted to: {output_img}")
             return output_img
