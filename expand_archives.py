@@ -101,6 +101,12 @@ def main():
             
             # Check if file still exists (might have been deleted as part of extraction)
             if os.path.exists(file_path):
+                # Update progress bar to show current file
+                current_file = os.path.basename(file_path)
+                if len(current_file) > 40:
+                    current_file = current_file[:37] + "..."
+                pbar.set_description(f"Processing: {current_file}")
+                
                 new_files, error_type = try_extract_file(file_path)
                 
                 if new_files:
