@@ -110,15 +110,55 @@ class ClonezillaRestorer:
             print(f"   Found: {f.name} (exists: {f.exists()}, is_file: {f.is_file()})")
         
         # Check the first file's format
+        compression_type = None
         if partition['files']:
             first_file = partition['files'][0]
             try:
                 result = subprocess.run(['file', str(first_file)], capture_output=True, text=True)
-                print(f"   File type: {result.stdout.strip()}")
-            except:
-                pass
+                file_type = result.stdout.strip()
+                print(f"   File type: {file_type}")
+                
+                # Detect compression type
+                if 'gzip' in file_type.lower():
+                    compression_type = 'gzip'
+                elif 'bzip2' in file_type.lower():
+                    compression_type = 'bzip2'
+                elif 'xz' in file_type.lower() or 'lzma' in file_type.lower():
+                    compression_type = 'xz'
+                elif 'zstandard' in file_type.lower():
+                    compression_type = 'zstd'
+                else:
+                    # Try to detect by reading first few bytes
+                    with open(first_file, 'rb') as f:
+                        magic = f.read(6)
+                        if magic[:2] == b'\x1f\x8b':
+                            compression_type = 'gzip'
+                        elif magic[:3] == b'BZh':
+                            compression_type = 'bzip2'
+                        elif magic[:6] == b'\xfd7zXZ\x00':
+                            compression_type = 'xz'
+                        elif magic[:4] == b'\x28\xb5\x2f\xfd':
+                            compression_type = 'zstd'
+                        else:
+                            print(f"   Warning: Unknown compression (magic bytes: {magic.hex()})...")
+                            print(f"   Trying gzip anyway...")
+                            compression_type = 'gzip'
+            except Exception as e:
+                print(f"   Warning: Could not detect file type: {e}")
+                compression_type = 'gzip'  # Default to gzip
+        
+        print(f"   Detected compression: {compression_type or 'unknown'}")
         
         output_img = self.image_dir / f"{partition['name']}.img"
+        
+        # Choose decompression command based on type
+        decompress_cmds = {
+            'gzip': ['gunzip', '-c'],
+            'bzip2': ['bunzip2', '-c'],
+            'xz': ['xz', '-d', '-c'],
+            'zstd': ['zstd', '-d', '-c']
+        }
+        decompress_cmd = decompress_cmds.get(compression_type, ['gunzip', '-c'])
         
         try:
             if partition['is_split']:
@@ -126,8 +166,8 @@ class ClonezillaRestorer:
                 print(f"   Combining and decompressing {len(partition['files'])} split files...")
                 
                 # First concatenate all parts into a single temp file
-                temp_gz = self.image_dir / f"{partition['name']}.gz"
-                with open(temp_gz, 'wb') as outfile:
+                temp_compressed = self.image_dir / f"{partition['name']}.compressed"
+                with open(temp_compressed, 'wb') as outfile:
                     for part_file in partition['files']:
                         print(f"   - Concatenating {part_file.name}...")
                         with open(part_file, 'rb') as infile:
@@ -138,19 +178,24 @@ class ClonezillaRestorer:
                                     break
                                 outfile.write(chunk)
                 
-                print(f"   - Decompressing concatenated file...")
+                print(f"   - Decompressing with {compression_type}...")
                 # Now decompress the concatenated file
                 with open(output_img, 'wb') as outfile:
-                    subprocess.run(['gunzip', '-c', str(temp_gz)], stdout=outfile, check=True)
+                    result = subprocess.run(decompress_cmd + [str(temp_compressed)], 
+                                          stdout=outfile, stderr=subprocess.PIPE, text=True)
+                    if result.returncode != 0:
+                        print(f"   Error output: {result.stderr}")
+                        raise subprocess.CalledProcessError(result.returncode, decompress_cmd)
                 
                 # Clean up temp file
-                temp_gz.unlink()
+                temp_compressed.unlink()
                 
             else:
                 # Single file - just decompress
                 print(f"   Decompressing...")
                 with open(output_img, 'wb') as outfile:
-                    subprocess.run(['gunzip', '-c', str(partition['files'][0])], stdout=outfile, check=True)
+                    subprocess.run(decompress_cmd + [str(partition['files'][0])], 
+                                 stdout=outfile, check=True)
             
             print(f"   ✓ Extracted to: {output_img}")
             return output_img
