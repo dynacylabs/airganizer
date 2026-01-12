@@ -78,6 +78,9 @@ class ClonezillaRestorer:
         
         output_img = self.image_dir / f"{partition['name']}.img"
         
+        # Use gunzip -c for cross-platform compatibility (works on both Linux and macOS)
+        decompress_cmd = ['gunzip', '-c']
+        
         try:
             if partition['is_split']:
                 # Concatenate split files and decompress
@@ -85,8 +88,9 @@ class ClonezillaRestorer:
                 with open(output_img, 'wb') as outfile:
                     for part_file in partition['files']:
                         print(f"   - Processing {part_file.name}...")
-                        # Use zcat/gzip to decompress each part and write to output
-                        proc = subprocess.Popen(['zcat', str(part_file)], stdout=subprocess.PIPE)
+                        # Use gunzip -c to decompress each part and write to output
+                        cmd = decompress_cmd + [str(part_file)]
+                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
                         chunk_size = 1024 * 1024  # 1MB chunks
                         while True:
                             chunk = proc.stdout.read(chunk_size)
@@ -94,11 +98,14 @@ class ClonezillaRestorer:
                                 break
                             outfile.write(chunk)
                         proc.wait()
+                        if proc.returncode != 0:
+                            raise subprocess.CalledProcessError(proc.returncode, cmd)
             else:
                 # Single file - just decompress
                 print(f"   Decompressing...")
+                cmd = decompress_cmd + [str(partition['files'][0])]
                 with open(output_img, 'wb') as outfile:
-                    subprocess.run(['zcat', str(partition['files'][0])], stdout=outfile, check=True)
+                    subprocess.run(cmd, stdout=outfile, check=True)
             
             print(f"   ✓ Extracted to: {output_img}")
             return output_img
