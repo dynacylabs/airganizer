@@ -46,16 +46,20 @@ python -m airganizer.main /path/to/directory --organize --output structure.json
 
 ## Configuration Example
 
-`.airganizer.json`:
-```json
-{
-  "ai_provider": "ollama",
-  "chunk_size": 4000,
-  "ollama": {
-    "model": "llama2",
-    "base_url": "http://localhost:11434"
-  }
-}
+`.airganizer.yaml`:
+```yaml
+# Airganizer Configuration File
+
+# AI provider to use: 'openai', 'anthropic', or 'ollama'
+ai_provider: ollama
+
+# Maximum chunk size in characters
+chunk_size: 4000
+
+# Ollama (local AI) configuration
+ollama:
+  model: llama2
+  base_url: http://localhost:11434
 ```
 
 ## AI Providers

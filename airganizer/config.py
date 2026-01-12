@@ -1,7 +1,7 @@
 """Configuration management for Airganizer."""
 
 import os
-import json
+import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -42,21 +42,22 @@ class Config:
     def _get_default_config_path(self) -> str:
         """Get default config file path."""
         # Look in current directory first, then home directory
-        local_config = Path('.airganizer.json')
+        local_config = Path('.airganizer.yaml')
         if local_config.exists():
             return str(local_config)
         
-        home_config = Path.home() / '.airganizer.json'
+        home_config = Path.home() / '.airganizer.yaml'
         return str(home_config)
     
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file or create default."""
         if self.config_path.exists():
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                loaded = json.load(f)
+                loaded = yaml.safe_load(f)
                 # Merge with defaults to handle missing keys
                 config = self.DEFAULT_CONFIG.copy()
-                config.update(loaded)
+                if loaded:  # Handle empty yaml files
+                    config.update(loaded)
                 return config
         
         return self.DEFAULT_CONFIG.copy()
@@ -66,7 +67,10 @@ class Config:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(self.config_path, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, indent=2)
+            # Add header comment
+            f.write("# Airganizer Configuration File\n")
+            f.write("# Edit this file to configure your AI provider and settings\n\n")
+            yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
     
     def get(self, key: str, default: Any = None) -> Any:
         """

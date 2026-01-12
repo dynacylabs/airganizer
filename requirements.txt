@@ -1,5 +1,5 @@
 # Core dependencies
-# (will be populated as needed)
+pyyaml>=6.0
 
 # AI Provider support (optional - install as needed)
 # openai>=1.0.0

@@ -123,7 +123,7 @@ def main():
             if provider_config['provider'] == 'openai':
                 if not provider_config['api_key']:
                     print("Error: OpenAI API key not configured.", file=sys.stderr)
-                    print("Set OPENAI_API_KEY environment variable or configure in .airganizer.json")
+                    print("Set OPENAI_API_KEY environment variable or configure in .airganizer.yaml")
                     sys.exit(1)
                 ai_provider = OpenAIProvider(
                     api_key=provider_config['api_key'],
@@ -132,7 +132,7 @@ def main():
             elif provider_config['provider'] == 'anthropic':
                 if not provider_config['api_key']:
                     print("Error: Anthropic API key not configured.", file=sys.stderr)
-                    print("Set ANTHROPIC_API_KEY environment variable or configure in .airganizer.json")
+                    print("Set ANTHROPIC_API_KEY environment variable or configure in .airganizer.yaml")
                     sys.exit(1)
                 ai_provider = AnthropicProvider(
                     api_key=provider_config['api_key'],

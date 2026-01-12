@@ -1,0 +1,76 @@
+# Airganizer Configuration File
+# Edit this file to configure your AI provider and settings
+#
+# This file supports comments! Use # to add notes and documentation.
+
+# ============================================================================
+# AI Provider Selection
+# ============================================================================
+# Choose which AI provider to use: 'openai', 'anthropic', or 'ollama'
+# - openai: Cloud-based, requires API key, best quality
+# - anthropic: Cloud-based, requires API key, good quality
+# - ollama: Local, free, works offline, supports GPU/Metal
+ai_provider: ollama
+
+# ============================================================================
+# Chunking Configuration
+# ============================================================================
+# Maximum size of each chunk in characters when processing large directories
+# Smaller chunks = more API calls but better memory usage
+# Larger chunks = fewer calls but may exceed model context limits
+# Recommended: 2000-8000
+chunk_size: 4000
+
+# ============================================================================
+# OpenAI Configuration
+# ============================================================================
+openai:
+  # Get your API key from: https://platform.openai.com/api-keys
+  # Or set environment variable: OPENAI_API_KEY
+  api_key: ''
+  
+  # Model to use. Options:
+  # - gpt-4: Best quality, slower, more expensive
+  # - gpt-4-turbo: Fast and capable
+  # - gpt-3.5-turbo: Fast and cheap
+  model: gpt-4
+
+# ============================================================================
+# Anthropic (Claude) Configuration
+# ============================================================================
+anthropic:
+  # Get your API key from: https://console.anthropic.com/
+  # Or set environment variable: ANTHROPIC_API_KEY
+  api_key: ''
+  
+  # Model to use. Options:
+  # - claude-3-5-sonnet-20241022: Best for complex tasks
+  # - claude-3-opus-20240229: Most capable
+  # - claude-3-sonnet-20240229: Balanced
+  model: claude-3-5-sonnet-20241022
+
+# ============================================================================
+# Ollama (Local AI) Configuration
+# ============================================================================
+ollama:
+  # Model to use. Popular options:
+  # - llama3.2:3b - Fast, light (2GB RAM)
+  # - mistral:7b - Balanced (4GB RAM) - RECOMMENDED
+  # - llama3.2:11b - Better quality (7GB RAM)
+  # - llama3.2:70b - Best quality (40GB RAM)
+  # 
+  # Install models with: ollama pull <model-name>
+  # List models with: ollama list
+  model: llama2
+  
+  # Base URL for Ollama server
+  # Default is localhost. Change if running on a different machine.
+  base_url: http://localhost:11434
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Environment variables override config file settings
+# - All AI providers automatically use GPU when available
+# - Ollama uses Metal on Mac, CUDA on NVIDIA, ROCm on AMD
+# - You can test connection with: python -m airganizer.main . --organize --debug

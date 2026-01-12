@@ -41,25 +41,33 @@ Create a configuration file:
 python -m airganizer.main /path/to/directory --init-config
 ```
 
-This creates `.airganizer.json` with default settings. Edit it to configure your AI provider:
+This creates `.airganizer.yaml` with default settings. Edit it to configure your AI provider:
 
-```json
-{
-  "ai_provider": "ollama",
-  "chunk_size": 4000,
-  "openai": {
-    "api_key": "your-api-key-here",
-    "model": "gpt-4"
-  },
-  "anthropic": {
-    "api_key": "your-api-key-here",
-    "model": "claude-3-5-sonnet-20241022"
-  },
-  "ollama": {
-    "model": "llama2",
-    "base_url": "http://localhost:11434"
-  }
-}
+```yaml
+# Airganizer Configuration File
+# Edit this file to configure your AI provider and settings
+
+# AI provider to use: 'openai', 'anthropic', or 'ollama'
+ai_provider: ollama
+
+# Maximum chunk size in characters
+chunk_size: 4000
+
+# OpenAI configuration
+openai:
+  api_key: ''  # Or set OPENAI_API_KEY environment variable
+  model: gpt-4
+
+# Anthropic configuration
+anthropic:
+  api_key: ''  # Or set ANTHROPIC_API_KEY environment variable
+  model: claude-3-5-sonnet-20241022
+
+# Ollama (local AI) configuration
+ollama:
+  model: llama2
+  base_url: http://localhost:11434
+```
 ```
 
 You can also use environment variables:

@@ -74,28 +74,28 @@ pip install ollama
 # Create config file
 python -m airganizer.main . --init-config
 
-# Edit .airganizer.json
+# Edit .airganizer.yaml
 ```
 
-Update `.airganizer.json`:
+Update `.airganizer.yaml`:
 
-```json
-{
-  "ai_provider": "ollama",
-  "chunk_size": 4000,
-  "openai": {
-    "api_key": "",
-    "model": "gpt-4"
-  },
-  "anthropic": {
-    "api_key": "",
-    "model": "claude-3-5-sonnet-20241022"
-  },
-  "ollama": {
-    "model": "mistral:7b",
-    "base_url": "http://localhost:11434"
-  }
-}
+```yaml
+# Airganizer Configuration File
+
+ai_provider: ollama
+chunk_size: 4000
+
+openai:
+  api_key: ''
+  model: gpt-4
+
+anthropic:
+  api_key: ''
+  model: claude-3-5-sonnet-20241022
+
+ollama:
+  model: mistral:7b  # Change this to your preferred model
+  base_url: http://localhost:11434
 ```
 
 ## Step 7: Run Airganizer
@@ -195,7 +195,7 @@ pip install ollama
 
 # 5. Configure Airganizer
 python -m airganizer.main . --init-config
-# Edit .airganizer.json to set model: "mistral:7b"
+# Edit .airganizer.yaml to set model: "mistral:7b"
 
 # 6. Run organization
 python -m airganizer.main ~/Documents --organize --output organized_structure.json
