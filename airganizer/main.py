@@ -71,8 +71,8 @@ def main():
     parser.add_argument(
         '--chunk-size',
         type=int,
-        default=4000,
-        help='Maximum chunk size in characters (default: 4000)'
+        default=None,
+        help='Maximum chunk size in characters (default: from config or 4000)'
     )
     
     parser.add_argument(
@@ -167,10 +167,14 @@ def main():
                 print(f"[DEBUG] Root directories: {len(tree.get('dirs', {}))}")
             
             # Create organizer
-            chunk_size = args.chunk_size if args.chunk_size else config.get('chunk_size', 4000)
+            chunk_size = args.chunk_size if args.chunk_size is not None else config.get('chunk_size', 4000)
             
             if args.debug:
                 print(f"[DEBUG] Chunk size: {chunk_size} characters")
+                if args.chunk_size is not None:
+                    print(f"[DEBUG] Chunk size source: command line argument")
+                else:
+                    print(f"[DEBUG] Chunk size source: config file")
             
             organizer = StructureOrganizer(
                 ai_provider=ai_provider,
