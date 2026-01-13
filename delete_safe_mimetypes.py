@@ -15,21 +15,28 @@ import argparse
 
 # MIME types that are safe to delete
 SAFE_TO_DELETE = {
-    'inode/x-empty',                    # Empty files
-    'application/x-bplist',             # macOS binary property lists (cache)
-    'application/x-ms-shortcut',        # Windows shortcuts
-    'application/x-mswinurl',           # Windows URL shortcuts
-    'application/x-terminfo',           # Terminal info files
-    'application/etl',                  # Windows Event Trace Logs
-    'application/mbox',                 # Mailbox files
-    'application/x-ms-pdb',             # Debug symbol files
-    'application/x-wine-extension-ini', # Wine configuration files
-    'application/x-ole-storage',        # Old Office file fragments
-    'application/x-dosexec',            # Old DOS executables
-    'application/x-commodore-basic',    # Commodore files
-    'inode/symlink',                    # Symbolic links (often broken)
-    'application/zlib',                 # Compressed data/cache
-    'application/x-bytecode.python',    # Python cache files (.pyc)
+    'inode/x-empty',                    # Empty files (13,578 files)
+    'application/x-bplist',             # macOS binary property lists/cache (23,533 files)
+    'application/x-ms-shortcut',        # Windows shortcuts (.lnk) (533 files)
+    'application/x-mswinurl',           # Windows URL shortcuts (98 files)
+    'application/x-terminfo',           # Terminal info files (92 files)
+    'application/etl',                  # Windows Event Trace Logs (71 files)
+    'application/mbox',                 # Mailbox files (66 files)
+    'application/x-ms-pdb',             # Debug symbol files (104 files)
+    'application/x-wine-extension-ini', # Wine configuration files (2,944 files)
+    'application/x-ole-storage',        # Old Office file fragments (367 files)
+    'application/x-dosexec',            # Old DOS executables (505 files)
+    'application/x-commodore-basic',    # Commodore files (238 files)
+    'inode/symlink',                    # Symbolic links (19 files)
+    'application/zlib',                 # Compressed data/cache (1,951 files)
+    'application/x-bytecode.python',    # Python cache files .pyc (12 files)
+    'application/x-ms-ese',             # Windows Extensible Storage Engine cache (30 files)
+    'application/x-compress-ttcomp',    # Compressed temporary data (40 files)
+    'application/x-setupscript',        # Old setup scripts (34 files)
+    'application/x-dosdriver',          # Old DOS drivers (9 files)
+    'text/x-mozilla-mork',              # Mozilla cache format (85 files)
+    'application/x-dmp',                # Windows dump files (12 files)
+    'application/x-stargallery-thm',    # StarOffice Gallery thumbnails (17 files)
 }
 
 
