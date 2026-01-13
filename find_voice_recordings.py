@@ -392,10 +392,21 @@ def analyze_audio_advanced(file_path):
     Advanced audio analysis using librosa.
     Returns: (is_song, confidence, reason)
     """
+    import warnings
+    warnings.filterwarnings('ignore', category=FutureWarning)
+    warnings.filterwarnings('ignore', category=DeprecationWarning)
+    
     try:
-        # Load audio (limit to first 60 seconds for speed)
-        y, sr = librosa.load(str(file_path), duration=60, sr=22050)
-        duration = librosa.get_duration(y=y, sr=sr)
+        # Load audio (limit to first 30 seconds for speed - enough to detect patterns)
+        y, sr = librosa.load(str(file_path), duration=30, sr=22050, mono=True)
+        
+        # Get actual duration from file metadata (faster than loading entire file)
+        try:
+            import soundfile as sf
+            info = sf.info(str(file_path))
+            duration = info.duration
+        except:
+            duration = librosa.get_duration(y=y, sr=sr)
         
         # 1. Duration check
         if duration < 30:
@@ -412,13 +423,8 @@ def analyze_audio_advanced(file_path):
         # 4. Harmonic/percussive separation
         y_harmonic, y_percussive = librosa.effects.hpss(y)
         harmonic_ratio = np.sum(np.abs(y_harmonic)) / (np.sum(np.abs(y)) + 1e-6)
-        percussive_ratio = np.sum(np.abs(y_percussive)) / (np.sum(np.abs(y)) + 1e-6)
         
-        # 5. Spectral features
-        spectral_centroids = librosa.feature.spectral_centroid(y=y, sr=sr)
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
-        
-        # 6. Zero crossing rate (speech has higher ZCR)
+        # 5. Zero crossing rate (speech has higher ZCR)
         zcr = librosa.feature.zero_crossing_rate(y)
         mean_zcr = np.mean(zcr)
         
@@ -467,8 +473,12 @@ def analyze_audio_advanced(file_path):
         
         return is_song, confidence, reason
         
+    except (RuntimeError, ValueError, OSError, IOError) as e:
+        # File format errors, corruption, unsupported codecs
+        # Fall back to basic analysis
+        return None, 0.0, f"librosa_error"
     except Exception as e:
-        return None, 0.0, f"error_{str(e)[:30]}"
+        return None, 0.0, f"error"
 
 
 def analyze_audio_basic(file_path):
@@ -560,10 +570,17 @@ def scan_and_delete_songs(directory_path, dry_run=True, verbose=False):
         is_song, confidence, reason = analyze_func(file_path)
         
         if is_song is None:
-            errors.append((file_path, reason))
-            if verbose:
-                tqdm.write(f"  [ERROR] {file_path.name}: {reason}")
-        elif is_song:
+            # Librosa failed, try basic analysis
+            is_song_basic, confidence_basic, reason_basic = analyze_audio_basic(file_path)
+            if is_song_basic is not None:
+                is_song, confidence, reason = is_song_basic, confidence_basic, f"basic_{reason_basic}"
+            else:
+                errors.append((file_path, reason))
+                if verbose:
+                    tqdm.write(f"  [ERROR] {file_path.name}: {reason}")
+                continue
+        
+        if is_song:
             songs_to_delete.append((file_path, confidence, reason))
             if verbose:
                 tqdm.write(f"  [SONG→DELETE] {file_path.name} (conf={confidence:.2f}, {reason})")
