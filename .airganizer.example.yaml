@@ -45,10 +45,12 @@ openai:
   api_key: ''
   
   # Model to use. Options:
-  # - gpt-4: Best quality, slower, more expensive
-  # - gpt-4-turbo: Fast and capable
-  # - gpt-3.5-turbo: Fast and cheap
-  model: gpt-4
+  # - gpt-4-turbo: RECOMMENDED for large datasets (128K context, fast)
+  # - gpt-4: Best quality but slower (8K context)
+  # - gpt-3.5-turbo: Fast and cheap but limited context (16K)
+  #
+  # For 650GB+: Use gpt-4-turbo with chunk_size: 300000-400000
+  model: gpt-4-turbo
 
 # ============================================================================
 # Anthropic (Claude) Configuration
@@ -59,24 +61,33 @@ anthropic:
   api_key: ''
   
   # Model to use. Options:
-  # - claude-3-5-sonnet-20241022: Best for complex tasks
-  # - claude-3-opus-20240229: Most capable
-  # - claude-3-sonnet-20240229: Balanced
+  # - claude-3-5-sonnet-20241022: BEST for large datasets (200K context, excellent quality)
+  # - claude-3-opus-20240229: Most capable but slower (200K context)
+  # - claude-3-sonnet-20240229: Balanced (200K context)
+  #
+  # For 650GB+: Use claude-3-5-sonnet with chunk_size: 500000-600000
   model: claude-3-5-sonnet-20241022
 
 # ============================================================================
 # Ollama (Local AI) Configuration
 # ============================================================================
 ollama:
-  # Model to use. Popular options:
-  # - llama3.2:3b - Fast, light (2GB RAM)
-  # - mistral:7b - Balanced (4GB RAM) - RECOMMENDED
-  # - llama3.2:11b - Better quality (7GB RAM)
-  # - llama3.2:70b - Best quality (40GB RAM)
+  # Model to use. Popular options with their context windows:
+  # - qwen2.5:32b - BEST for large datasets (32K context, excellent quality)
+  # - llama3.2:90b - High quality (128K context, needs 64GB+ RAM)
+  # - llama3.2:70b - Great quality (128K context, needs 40GB+ RAM)
+  # - mistral:7b - Balanced (32K context, 4GB RAM)
+  # - llama3.2:11b - Good quality (128K context, 7GB RAM)
+  # - llama3.2:3b - Fast, light (128K context, 2GB RAM)
   # 
+  # For 650GB+ datasets on local hardware:
+  # - M4 Mac Mini (16GB): qwen2.5:7b with chunk_size: 80000
+  # - M4 Mac Mini (32GB): qwen2.5:32b with chunk_size: 100000
+  # - High-end workstation: llama3.2:70b with chunk_size: 300000
+  #
   # Install models with: ollama pull <model-name>
   # List models with: ollama list
-  model: llama2
+  model: qwen2.5:32b
   
   # Base URL for Ollama server
   # Default is localhost. Change if running on a different machine.
