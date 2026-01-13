@@ -467,39 +467,26 @@ def analyze_audio_advanced(file_path):
 def analyze_audio_basic(file_path):
     """
     Basic audio analysis without librosa.
-    Uses only duration and metadata.
+    Uses ONLY metadata - no file size or filename heuristics.
     Returns: (is_song, confidence, reason)
     """
+    if not MUTAGEN_AVAILABLE:
+        return None, 0.0, "no_mutagen"
+    
     try:
-        # Get file size as rough duration estimate
-        size_mb = file_path.stat().st_size / (1024 * 1024)
-        
         # Check metadata
         has_metadata = has_music_metadata(file_path)
         
-        confidence = 0.0
-        reasons = []
-        
-        # If it has music metadata, very likely a song
         if has_metadata:
-            confidence += 0.6
-            reasons.append("has_music_metadata")
-        
-        # File size heuristic (rough estimate: 1MB ≈ 1 minute for MP3)
-        if size_mb > 2:  # > 2MB likely a song
-            confidence += 0.3
-            reasons.append(f"large_{size_mb:.1f}MB")
-        elif size_mb < 0.5:  # < 0.5MB likely a short recording
-            confidence -= 0.2
-            reasons.append(f"small_{size_mb:.1f}MB")
-        
-        is_song = confidence > 0.4
-        reason = "+".join(reasons) if reasons else "no_indicators"
-        
-        return is_song, confidence, reason
+            # Has artist/album/title metadata = definitely a song
+            return True, 0.9, "music_metadata"
+        else:
+            # No music metadata = likely a recording/voice memo
+            return False, 0.7, "no_music_metadata"
         
     except Exception as e:
-        return None, 0.0, f"error_{str(e)[:30]}"
+        # Can't read metadata - unknown
+        return None, 0.0, f"metadata_read_error"
 
 
 def scan_and_delete_songs(directory_path, dry_run=True, verbose=False):
@@ -554,11 +541,12 @@ def scan_and_delete_songs(directory_path, dry_run=True, verbose=False):
         is_song, confidence, reason = analyze_func(file_path)
         
         if is_song is None:
-            # Librosa failed, try basic analysis
-            is_song_basic, confidence_basic, reason_basic = analyze_audio_basic(file_path)
-            if is_song_basic is not None:
-                is_song, confidence, reason = is_song_basic, confidence_basic, f"basic_{reason_basic}"
+            # Librosa failed, try metadata-only analysis
+            is_song, confidence, reason = analyze_audio_basic(file_path)
+            if is_song is not None:
+                reason = f"metadata_{reason}"
             else:
+                # Both failed - add to errors
                 errors.append((file_path, reason))
                 if verbose:
                     tqdm.write(f"  [ERROR] {file_path.name}: {reason}")
