@@ -102,6 +102,7 @@ SAFE_TO_DELETE = {
 }
 
 
+
 def get_detailed_mime_type(file_path, mime_detector, mime_encoding_detector, description_detector):
     """
     Get the most specific MIME type possible for a file.
