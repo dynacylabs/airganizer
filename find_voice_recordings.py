@@ -28,23 +28,6 @@ except ImportError:
     MUTAGEN_AVAILABLE = False
 
 
-# Audio MIME types to analyze
-AUDIO_MIME_TYPES = {
-    'audio/mpeg',           # MP3
-    'audio/ogg',            # OGG
-    'audio/x-m4a',          # M4A
-    'audio/x-wav',          # WAV
-    'audio/x-aiff',         # AIFF
-    'audio/flac',           # FLAC
-    'audio/aac',            # AAC
-    'audio/x-ms-wma',       # WMA
-    'audio/AMR',            # AMR (voice codec)
-    'audio/midi',           # MIDI
-    'audio/x-mp4a-latm',
-    'audio/x-hx-aac-adts',
-}
-
-
 def identify_with_binwalk(file_path):
     """
     Use binwalk to identify file signatures.
@@ -552,7 +535,8 @@ def scan_and_delete_songs(directory_path, dry_run=True, verbose=False):
     audio_files = []
     for file_path in tqdm(all_files, desc="Checking MIME types", unit="file"):
         mime_type = get_mime_type(file_path)
-        if mime_type in AUDIO_MIME_TYPES:
+        # Check if it's ANY audio file (starts with "audio/")
+        if mime_type and mime_type.startswith('audio/'):
             audio_files.append(file_path)
     
     print(f"\nFound {len(audio_files)} audio files to analyze")
