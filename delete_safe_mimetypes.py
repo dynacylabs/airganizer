@@ -37,6 +37,7 @@ SAFE_TO_DELETE = {
     'text/x-mozilla-mork',              # Mozilla cache format (85 files)
     'application/x-dmp',                # Windows dump files (12 files)
     'application/x-stargallery-thm',    # StarOffice Gallery thumbnails (17 files)
+    'application/x-java-applet',        # Java class files (446,569 files)
 }
 
 
