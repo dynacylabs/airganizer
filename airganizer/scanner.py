@@ -88,5 +88,67 @@ class FileScanner:
             return tree
         
         return build_subtree(self.root_path)
+    
+    def tree_to_path_list(self, tree: dict = None) -> str:
+        """
+        Convert tree structure to path list format (most compact).
+        
+        Args:
+            tree: Tree structure (if None, builds it first)
+            
+        Returns:
+            String with one file path per line
+        """
+        if tree is None:
+            tree = self.build_tree()
+        
+        def collect_paths(structure: dict, current_path: str = "") -> List[str]:
+            paths = []
+            
+            # Add files at current level
+            for f in structure.get('files', []):
+                path = f"{current_path}/{f}" if current_path else f
+                paths.append(path)
+            
+            # Add directories recursively
+            for dir_name, dir_content in structure.get('dirs', {}).items():
+                dir_path = f"{current_path}/{dir_name}" if current_path else dir_name
+                paths.extend(collect_paths(dir_content, dir_path))
+            
+            return paths
+        
+        paths = collect_paths(tree)
+        return "\n".join(paths)
+    
+    def tree_to_compact_format(self, tree: dict = None) -> str:
+        """
+        Convert tree structure to compact custom format.
+        
+        Args:
+            tree: Tree structure (if None, builds it first)
+            
+        Returns:
+            String in compact format with directory hierarchy
+        """
+        if tree is None:
+            tree = self.build_tree()
+        
+        def format_structure(structure: dict, indent: int = 0) -> List[str]:
+            lines = []
+            prefix = "  " * indent
+            
+            # Files at this level
+            files = structure.get('files', [])
+            if files:
+                lines.append(f"{prefix}files: {', '.join(files)}")
+            
+            # Directories
+            for dir_name, dir_content in structure.get('dirs', {}).items():
+                lines.append(f"{prefix}{dir_name}/:")
+                lines.extend(format_structure(dir_content, indent + 1))
+            
+            return lines
+        
+        return "\n".join(format_structure(tree))
 
 

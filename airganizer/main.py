@@ -76,6 +76,14 @@ def main():
     )
     
     parser.add_argument(
+        '--format',
+        type=str,
+        choices=['json', 'pathlist', 'compact'],
+        default=None,
+        help='Format for sending file tree to AI (default: from config or pathlist)'
+    )
+    
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable debug output'
@@ -168,6 +176,27 @@ def main():
             
             # Create organizer
             chunk_size = args.chunk_size if args.chunk_size is not None else config.get('chunk_size', 4000)
+            format_type = args.format if args.format is not None else config.get('format', 'pathlist')
+            
+            if args.debug:
+                print(f"[DEBUG] Chunk size: {chunk_size}")
+                print(f"[DEBUG] Format: {format_type}")
+                
+            # Convert tree to selected format
+            if format_type == 'pathlist':
+                tree_data = scanner.tree_to_path_list(tree)
+                if args.debug:
+                    print(f"[DEBUG] Converted tree to path list format")
+                    print(f"[DEBUG] Path list size: {len(tree_data)} characters")
+            elif format_type == 'compact':
+                tree_data = scanner.tree_to_compact_format(tree)
+                if args.debug:
+                    print(f"[DEBUG] Converted tree to compact format")
+                    print(f"[DEBUG] Compact format size: {len(tree_data)} characters")
+            else:  # json
+                tree_data = tree
+                if args.debug:
+                    print(f"[DEBUG] Using JSON format")
             
             if args.debug:
                 print(f"[DEBUG] Chunk size: {chunk_size} characters")
@@ -183,7 +212,7 @@ def main():
             )
             
             # Generate structure
-            structure = organizer.organize(tree)
+            structure = organizer.organize(tree_data, format_type=format_type)
             
             # Print structure
             organizer.print_structure()

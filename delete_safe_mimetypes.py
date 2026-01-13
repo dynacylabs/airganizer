@@ -15,6 +15,7 @@ import argparse
 
 # MIME types that are safe to delete
 SAFE_TO_DELETE = {
+    # Cache & Temporary Files
     'inode/x-empty',                    # Empty files (13,578 files)
     'application/x-bplist',             # macOS binary property lists/cache (23,533 files)
     'application/x-ms-shortcut',        # Windows shortcuts (.lnk) (533 files)
@@ -38,6 +39,66 @@ SAFE_TO_DELETE = {
     'application/x-dmp',                # Windows dump files (12 files)
     'application/x-stargallery-thm',    # StarOffice Gallery thumbnails (17 files)
     'application/x-java-applet',        # Java class files (446,569 files)
+    
+    # Email & Messaging (70,817+ files)
+    'message/rfc822',                   # Email messages
+    'application/vnd.ms-outlook',       # Outlook files
+    'application/vnd.ms-tnef',          # MS Transport Neutral Encapsulation Format
+    'text/vcard',                       # Contact cards
+    'text/calendar',                    # Calendar files
+    
+    # Executables & Binaries (7,312+ files)
+    'application/x-mach-binary',        # macOS executables
+    'application/vnd.microsoft.portable-executable',  # Windows EXE
+    'application/x-executable',         # Generic executables
+    'application/x-sharedlib',          # Shared libraries
+    'application/x-ios-app',            # iOS applications
+    'application/x-linux-kernel',       # Linux kernel modules
+    'application/x-coff',               # Common Object File Format
+    'application/x-coff-executable',    # COFF executables
+    'application/x-object',             # Object files
+    'application/java-archive',         # JAR files
+    'application/x-java-pack200',       # Compressed JAR
+    'application/x-java-keystore',      # Java keystores
+    
+    # Fonts (446 files)
+    'font/woff2',                       # Web fonts
+    'font/woff',                        # Web fonts
+    'font/sfnt',                        # SFNT fonts
+    'font/ttf',                         # TrueType fonts
+    'font/otf',                         # OpenType fonts
+    'application/vnd.ms-fontobject',    # MS embedded fonts
+    'application/vnd.ms-opentype',      # MS OpenType
+    'font/x-amiga-font',                # Amiga fonts
+    'application/x-dfont',              # Mac data fork fonts
+    
+    # Database & Data Files (2,953 files)
+    'application/vnd.sqlite3',          # SQLite databases
+    'application/x-msaccess',           # MS Access databases
+    'application/x-matlab-data',        # MATLAB data files
+    'application/x-dbt',                # Database files
+    'application/x-dbf',                # dBase files
+    'application/x-dbase-index',        # dBase index files
+    
+    # Translation & Localization (81 files)
+    'application/x-gettext-translation', # Compiled translations
+    'text/x-po',                        # Portable Object files
+    'text/x-affix',                     # Affix dictionaries
+    
+    # Subtitle & Caption Files (10 files)
+    'application/x-subrip',             # SubRip subtitle files
+    
+    # Color & ICC Profiles (24 files)
+    'application/vnd.iccprofile',       # ICC color profiles
+    
+    # Legacy/Obsolete Formats (104+ files)
+    'application/postscript',           # PostScript files
+    'text/troff',                       # Troff documents
+    'text/x-tex',                       # TeX source files
+    'application/x-tex-tfm',            # TeX font metrics
+    'text/x-hex',                       # Hexadecimal dumps
+    'text/x-Algol68',                   # Algol 68 source
+    'application/mac-binhex40',         # Mac BinHex encoding
 }
 
 

@@ -11,16 +11,18 @@ class AIProvider(ABC):
     @abstractmethod
     def generate_structure(
         self,
-        file_chunk: Dict[str, Any],
+        file_chunk,  # Can be Dict or str
         current_structure: Dict[str, Any],
+        format_type: str = 'json',
         debug: bool = False
     ) -> Dict[str, Any]:
         """
         Generate or refine directory structure based on file chunk.
         
         Args:
-            file_chunk: Chunk of the actual file tree
+            file_chunk: Chunk of the actual file tree (dict for JSON, str for pathlist/compact)
             current_structure: Current theoretical directory structure
+            format_type: Format of the file_chunk ('json', 'pathlist', 'compact')
             debug: Enable debug output
             
         Returns:
@@ -68,14 +70,15 @@ class OpenAIProvider(AIProvider):
     
     def generate_structure(
         self,
-        file_chunk: Dict[str, Any],
+        file_chunk,
         current_structure: Dict[str, Any],
+        format_type: str = 'json',
         debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using OpenAI."""
         client = self._get_client()
         
-        prompt = self._build_prompt(file_chunk, current_structure)
+        prompt = self._build_prompt(file_chunk, current_structure, format_type)
         
         if debug:
             print(f"[DEBUG] OpenAI: Sending request to {self.model}...")
@@ -116,17 +119,29 @@ class OpenAIProvider(AIProvider):
     
     def _build_prompt(
         self,
-        file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        file_chunk,
+        current_structure: Dict[str, Any],
+        format_type: str = 'json'
     ) -> str:
         """Build the prompt for structure generation."""
+        
+        # Format the file chunk based on type
+        if format_type == 'pathlist':
+            files_section = f"""File paths (one per line):
+{file_chunk}"""
+        elif format_type == 'compact':
+            files_section = f"""Files (indented by directory):
+{file_chunk}"""
+        else:  # json
+            files_section = f"""Files as JSON tree:
+{json.dumps(file_chunk, indent=2)}"""
+        
         return f"""You are analyzing a file system to create an organized directory structure.
 
 Current theoretical structure:
 {json.dumps(current_structure, indent=2)}
 
-New files to consider:
-{json.dumps(file_chunk, indent=2)}
+{files_section}
 
 Your task:
 1. Analyze the files in the chunk
@@ -185,14 +200,15 @@ class AnthropicProvider(AIProvider):
     
     def generate_structure(
         self,
-        file_chunk: Dict[str, Any],
+        file_chunk,
         current_structure: Dict[str, Any],
+        format_type: str = 'json',
         debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using Anthropic."""
         client = self._get_client()
         
-        prompt = self._build_prompt(file_chunk, current_structure)
+        prompt = self._build_prompt(file_chunk, current_structure, format_type)
         
         if debug:
             print(f"[DEBUG] Anthropic: Sending request to {self.model}...")
@@ -255,17 +271,29 @@ class AnthropicProvider(AIProvider):
     
     def _build_prompt(
         self,
-        file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        file_chunk,
+        current_structure: Dict[str, Any],
+        format_type: str = 'json'
     ) -> str:
         """Build the prompt for structure generation."""
+        
+        # Format the file chunk based on type
+        if format_type == 'pathlist':
+            files_section = f"""File paths (one per line):
+{file_chunk}"""
+        elif format_type == 'compact':
+            files_section = f"""Files (indented by directory):
+{file_chunk}"""
+        else:  # json
+            files_section = f"""Files as JSON tree:
+{json.dumps(file_chunk, indent=2)}"""
+        
         return f"""You are analyzing a file system to create an organized directory structure.
 
 Current theoretical structure:
 {json.dumps(current_structure, indent=2)}
 
-New files to consider:
-{json.dumps(file_chunk, indent=2)}
+{files_section}
 
 Your task:
 1. Analyze the files in the chunk
@@ -329,14 +357,15 @@ class OllamaProvider(AIProvider):
     
     def generate_structure(
         self,
-        file_chunk: Dict[str, Any],
+        file_chunk,
         current_structure: Dict[str, Any],
+        format_type: str = 'json',
         debug: bool = False
     ) -> Dict[str, Any]:
         """Generate structure using Ollama."""
         client = self._get_client()
         
-        prompt = self._build_prompt(file_chunk, current_structure)
+        prompt = self._build_prompt(file_chunk, current_structure, format_type)
         
         if debug:
             print(f"[DEBUG] Ollama: Sending request to {self.model}...")
@@ -393,17 +422,29 @@ class OllamaProvider(AIProvider):
     
     def _build_prompt(
         self,
-        file_chunk: Dict[str, Any],
-        current_structure: Dict[str, Any]
+        file_chunk,
+        current_structure: Dict[str, Any],
+        format_type: str = 'json'
     ) -> str:
         """Build the prompt for structure generation."""
+        
+        # Format the file chunk based on type
+        if format_type == 'pathlist':
+            files_section = f"""File paths (one per line):
+{file_chunk}"""
+        elif format_type == 'compact':
+            files_section = f"""Files (indented by directory):
+{file_chunk}"""
+        else:  # json
+            files_section = f"""Files as JSON tree:
+{json.dumps(file_chunk, indent=2)}"""
+        
         return f"""You are analyzing a file system to create an organized directory structure.
 
 Current theoretical structure:
 {json.dumps(current_structure, indent=2)}
 
-New files to consider:
-{json.dumps(file_chunk, indent=2)}
+{files_section}
 
 Your task:
 1. Analyze the files in the chunk

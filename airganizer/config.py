@@ -12,6 +12,7 @@ class Config:
     DEFAULT_CONFIG = {
         'ai_provider': 'ollama',  # 'openai', 'anthropic', or 'ollama'
         'chunk_size': 4000,
+        'format': 'pathlist',  # 'json', 'pathlist', or 'compact'
         'openai': {
             'api_key': '',
             'model': 'gpt-4'

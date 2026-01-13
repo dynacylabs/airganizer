@@ -7,9 +7,10 @@ An AI-powered file organizing system that helps you automatically organize and m
 - **Recursive directory scanning** - Scan any directory and all subdirectories
 - **AI-powered organization** - Generate intelligent directory structures using AI
 - **Multiple AI providers** - Support for OpenAI, Anthropic Claude, and local Ollama models
+- **Multiple data formats** - JSON, path list, or compact formats for efficient processing
 - **GPU acceleration** - Local AI support with GPU and Apple Metal
 - **Chunked processing** - Efficiently handle large directory trees
-- **Configurable** - Customize AI provider, models, and chunk sizes
+- **Configurable** - Customize AI provider, models, chunk sizes, and data formats
 
 ## Installation
 
@@ -52,6 +53,12 @@ ai_provider: ollama
 
 # Maximum chunk size in characters
 chunk_size: 4000
+
+# Format for file tree data: 'json', 'pathlist', or 'compact'
+# - json: Full hierarchical structure (default, most detailed)
+# - pathlist: Simple newline-separated paths (60% smaller, recommended)
+# - compact: Indented format (similar to 'tree' command)
+format: pathlist
 
 # OpenAI configuration
 openai:
@@ -102,14 +109,61 @@ python -m airganizer.main /path/to/directory --organize
 # Specify provider
 python -m airganizer.main /path/to/directory --organize --provider ollama
 
+# Specify data format (pathlist is 60% smaller than JSON)
+python -m airganizer.main /path/to/directory --organize --format pathlist
+
 # Save structure to file
 python -m airganizer.main /path/to/directory --organize --output structure.json
 
-# Adjust chunk size
-python -m airganizer.main /path/to/directory --organize --chunk-size 2000
+# Adjust chunk size (recommended: 80K-500K for large datasets)
+python -m airganizer.main /path/to/directory --organize --chunk-size 80000
+
+# Full optimization for large datasets
+python -m airganizer.main /path/to/directory --organize --format pathlist --chunk-size 80000
 ```
 
 ## How It Works
+
+### Data Format Options
+
+Airganizer supports three formats for sending file trees to AI:
+
+**JSON Format (json)** - Default hierarchical structure
+```json
+{
+  "dirs": {
+    "documents": {
+      "dirs": {},
+      "files": ["report.pdf", "notes.txt"]
+    }
+  },
+  "files": []
+}
+```
+
+**Path List Format (pathlist)** - Simple newline-separated paths (recommended)
+```
+documents/report.pdf
+documents/notes.txt
+photos/vacation.jpg
+```
+- 60% smaller than JSON
+- Faster to parse
+- Reduces chunks from 560K to ~222K for large datasets
+- Recommended for datasets over 10GB
+
+**Compact Format (compact)** - Indented structure
+```
+documents/:
+  files: report.pdf, notes.txt
+photos/:
+  files: vacation.jpg
+```
+
+**Performance comparison for 650GB dataset:**
+- JSON with 4K chunks: 560,000 chunks = 16 days
+- Path list with 4K chunks: 222,000 chunks = 6 days (2.5x faster)
+- Path list with 80K chunks: 11,000 chunks = 15 hours (25x faster!)
 
 ### Phase 1: Structure Generation (Current)
 

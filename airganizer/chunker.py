@@ -16,7 +16,57 @@ class TreeChunker:
         """
         self.max_chunk_size = max_chunk_size
     
-    def chunk_tree(self, tree: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def chunk_tree(self, tree, format_type: str = 'json') -> List:
+        """
+        Split a file tree into chunks based on size.
+        
+        Args:
+            tree: The file tree (dict for JSON, str for pathlist/compact)
+            format_type: Format of the tree data ('json', 'pathlist', 'compact')
+            
+        Returns:
+            List of tree chunks (dicts for JSON, strings for pathlist/compact)
+        """
+        if format_type in ['pathlist', 'compact']:
+            return self._chunk_string(tree)
+        else:
+            return self._chunk_json_tree(tree)
+    
+    def _chunk_string(self, tree_str: str) -> List[str]:
+        """
+        Split a string-based tree (pathlist or compact) into chunks.
+        
+        Args:
+            tree_str: String representation of tree
+            
+        Returns:
+            List of string chunks
+        """
+        chunks = []
+        lines = tree_str.strip().split('\n')
+        
+        current_chunk = []
+        current_size = 0
+        
+        for line in lines:
+            line_size = len(line) + 1  # +1 for newline
+            
+            if current_size + line_size > self.max_chunk_size and current_chunk:
+                # Finish current chunk
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = []
+                current_size = 0
+            
+            current_chunk.append(line)
+            current_size += line_size
+        
+        # Add final chunk if any
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+        
+        return chunks if chunks else [tree_str]
+    
+    def _chunk_json_tree(self, tree: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Split a file tree into chunks based on size.
         

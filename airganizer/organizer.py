@@ -42,14 +42,16 @@ class StructureOrganizer:
     
     def organize(
         self,
-        file_tree: Dict[str, Any],
+        file_tree,  # Can be Dict or str depending on format
+        format_type: str = 'json',
         progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Generate an organized directory structure from file tree.
         
         Args:
-            file_tree: The actual file tree structure
+            file_tree: The actual file tree structure (dict for JSON, str for pathlist/compact)
+            format_type: Format of the tree data ('json', 'pathlist', 'compact')
             progress_callback: Optional callback function(current, total, chunk_data)
             
         Returns:
@@ -67,14 +69,17 @@ class StructureOrganizer:
             if self.debug:
                 print("[DEBUG] Starting chunking process...")
             
-            chunks = self.chunker.chunk_tree(file_tree)
+            chunks = self.chunker.chunk_tree(file_tree, format_type)
             total_chunks = len(chunks)
             
             if self.debug:
                 print(f"[DEBUG] Created {total_chunks} chunks")
                 for i, chunk in enumerate(chunks, 1):
-                    chunk_json = json.dumps(chunk)
-                    print(f"[DEBUG] Chunk {i} size: {len(chunk_json)} chars")
+                    if isinstance(chunk, dict):
+                        chunk_repr = json.dumps(chunk)
+                    else:
+                        chunk_repr = chunk
+                    print(f"[DEBUG] Chunk {i} size: {len(chunk_repr)} chars")
             
             print(f"Processing {total_chunks} chunks...")
             
@@ -86,10 +91,17 @@ class StructureOrganizer:
                     print(f"\nProcessing chunk {i}/{total_chunks}...")
                 
                 if self.debug:
-                    chunk_json = json.dumps(chunk)
-                    print(f"[DEBUG] Chunk {i} content preview:")
-                    print(f"[DEBUG]   Files in chunk: {len(chunk.get('files', []))}")
-                    print(f"[DEBUG]   Dirs in chunk: {len(chunk.get('dirs', {}))}")
+                    if isinstance(chunk, dict):
+                        chunk_repr = json.dumps(chunk)
+                        print(f"[DEBUG] Chunk {i} content preview:")
+                        print(f"[DEBUG]   Files in chunk: {len(chunk.get('files', []))}")
+                        print(f"[DEBUG]   Dirs in chunk: {len(chunk.get('dirs', {}))}")
+                    else:
+                        chunk_repr = chunk
+                        lines = chunk.split('\n')
+                        print(f"[DEBUG] Chunk {i} content preview:")
+                        print(f"[DEBUG]   Lines in chunk: {len(lines)}")
+                        print(f"[DEBUG]   First 3 lines: {lines[:3]}")
                     print(f"[DEBUG] Sending to AI provider...")
                 
                 # Feed to AI
@@ -97,6 +109,7 @@ class StructureOrganizer:
                     self.theoretical_structure = self.ai_provider.generate_structure(
                         file_chunk=chunk,
                         current_structure=self.theoretical_structure,
+                        format_type=format_type,
                         debug=self.debug
                     )
                     
