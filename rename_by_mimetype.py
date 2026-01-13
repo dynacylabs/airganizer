@@ -175,6 +175,93 @@ MIME_TO_EXTENSION = {
 }
 
 
+def identify_with_file_command(file_path):
+    """Use the file command with MIME type detection."""
+    try:
+        result = subprocess.run(
+            ['file', '--mime-type', '-b', str(file_path)],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            mime_type = result.stdout.strip()
+            if mime_type and mime_type != 'application/octet-stream':
+                return mime_type
+                
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    return None
+
+
+def identify_with_binwalk(file_path):
+    """Use binwalk to identify file signatures."""
+    try:
+        result = subprocess.run(
+            ['binwalk', '-B', str(file_path)],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout:
+            output = result.stdout.lower()
+            if 'zip archive' in output or 'pk\x03\x04' in output:
+                return 'application/zip'
+            elif 'gzip' in output:
+                return 'application/gzip'
+            elif 'jpeg image' in output:
+                return 'image/jpeg'
+            elif 'png image' in output:
+                return 'image/png'
+            elif 'pdf document' in output:
+                return 'application/pdf'
+            elif 'elf' in output or 'executable' in output:
+                return 'application/x-executable'
+            elif 'sqlite' in output:
+                return 'application/vnd.sqlite3'
+            elif 'tar archive' in output:
+                return 'application/x-tar'
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    return None
+
+
+def identify_by_extension(file_path):
+    """Fallback: identify by file extension."""
+    extension_map = {
+        '.zip': 'application/zip',
+        '.gz': 'application/gzip',
+        '.tar': 'application/x-tar',
+        '.7z': 'application/x-7z-compressed',
+        '.rar': 'application/x-rar',
+        '.pdf': 'application/pdf',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.mp4': 'video/mp4',
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/x-wav',
+        '.db': 'application/vnd.sqlite3',
+        '.sqlite': 'application/vnd.sqlite3',
+        '.sqlite3': 'application/vnd.sqlite3',
+        '.exe': 'application/vnd.microsoft.portable-executable',
+        '.dll': 'application/x-sharedlib',
+        '.so': 'application/x-sharedlib',
+        '.dylib': 'application/x-sharedlib',
+        '.jar': 'application/java-archive',
+        '.class': 'application/x-java-applet',
+    }
+    
+    suffix = file_path.suffix.lower()
+    return extension_map.get(suffix)
+
+
 def identify_by_content_analysis(file_path):
     """Analyze file content for magic bytes and patterns."""
     try:
@@ -213,14 +300,36 @@ def identify_by_content_analysis(file_path):
 
 
 def get_enhanced_mime_type(file_path, mime_detector):
-    """Get MIME type using multiple detection methods."""
+    """
+    Get MIME type using multiple detection methods.
+    Prioritizes accuracy over generic octet-stream results.
+    Uses same logic as scan_mime_types.py for consistency.
+    """
+    # First try: python-magic (libmagic)
     try:
         mime_type = mime_detector.from_file(str(file_path))
     except Exception:
         mime_type = 'application/octet-stream'
     
+    # If we get generic octet-stream, try harder
     if mime_type == 'application/octet-stream':
+        # Try content analysis first (fastest)
         specific_type = identify_by_content_analysis(file_path)
+        if specific_type:
+            return specific_type
+        
+        # Try file command
+        specific_type = identify_with_file_command(file_path)
+        if specific_type:
+            return specific_type
+        
+        # Try binwalk if available
+        specific_type = identify_with_binwalk(file_path)
+        if specific_type:
+            return specific_type
+        
+        # Last resort: check file extension
+        specific_type = identify_by_extension(file_path)
         if specific_type:
             return specific_type
     
