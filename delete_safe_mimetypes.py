@@ -33,6 +33,52 @@ SAFE_TO_DELETE = {
 }
 
 
+def get_detailed_mime_type(file_path, mime_detector, mime_encoding_detector, description_detector):
+    """
+    Get the most specific MIME type possible for a file.
+    Uses multiple detection methods to avoid generic octet-stream results.
+    
+    Args:
+        file_path: Path to the file
+        mime_detector: Magic instance for MIME detection
+        mime_encoding_detector: Magic instance for MIME with encoding
+        description_detector: Magic instance for text description
+        
+    Returns:
+        Most specific MIME type found
+    """
+    try:
+        # First attempt: standard MIME detection
+        mime_type = mime_detector.from_file(str(file_path))
+        
+        # If we get generic octet-stream, try to be more specific
+        if mime_type == 'application/octet-stream':
+            # Get file description for additional clues
+            description = description_detector.from_file(str(file_path))
+            description_lower = description.lower()
+            
+            # Check for specific binary formats by description
+            if 'executable' in description_lower or 'ELF' in description:
+                mime_type = 'application/x-executable'
+            elif 'archive' in description_lower:
+                if 'zip' in description_lower:
+                    mime_type = 'application/zip'
+                elif 'tar' in description_lower:
+                    mime_type = 'application/x-tar'
+                else:
+                    mime_type = 'application/x-archive'
+            elif 'data' in description_lower:
+                # Try with encoding detection
+                mime_with_encoding = mime_encoding_detector.from_file(str(file_path))
+                if mime_with_encoding != 'application/octet-stream':
+                    mime_type = mime_with_encoding.split(';')[0].strip()
+        
+        return mime_type
+        
+    except Exception as e:
+        raise e
+
+
 def scan_and_delete(directory_path, dry_run=True, verbose=False):
     """
     Scan directory and delete files with safe-to-delete MIME types.
@@ -45,7 +91,11 @@ def scan_and_delete(directory_path, dry_run=True, verbose=False):
     Returns:
         Tuple of (files_deleted, space_freed, mime_type_counts)
     """
-    mime_detector = magic.Magic(mime=True)
+    # Create multiple magic detectors for better accuracy
+    mime_detector = magic.Magic(mime=True, uncompress=True)
+    mime_encoding_detector = magic.Magic(mime_encoding=True)
+    description_detector = magic.Magic()
+    
     root_path = Path(directory_path).resolve()
     
     if not root_path.exists():
@@ -79,7 +129,13 @@ def scan_and_delete(directory_path, dry_run=True, verbose=False):
     # Scan files with progress bar
     for file_path in tqdm(file_paths, desc="Scanning files", unit="file"):
         try:
-            mime_type = mime_detector.from_file(str(file_path))
+            # Get detailed MIME type using multiple detection methods
+            mime_type = get_detailed_mime_type(
+                file_path, 
+                mime_detector, 
+                mime_encoding_detector, 
+                description_detector
+            )
             
             if mime_type in SAFE_TO_DELETE:
                 file_size = file_path.stat().st_size
