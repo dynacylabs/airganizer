@@ -377,8 +377,7 @@ def analyze_audio_advanced(file_path):
     Returns: (is_song, confidence, reason)
     """
     import warnings
-    warnings.filterwarnings('ignore', category=FutureWarning)
-    warnings.filterwarnings('ignore', category=DeprecationWarning)
+    warnings.filterwarnings('ignore')
     
     try:
         # Load audio (limit to first 30 seconds for speed - enough to detect patterns)
