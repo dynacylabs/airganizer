@@ -56,6 +56,7 @@ MIME_TO_EXTENSION = {
     'video/mpeg': '.mpeg',
     'video/MP2T': '.ts',
     'video/mpeg4-generic': '.mp4',
+    'video/x-matroska': '.mkv',
     
     # Audio
     'audio/mpeg': '.mp3',
@@ -172,6 +173,10 @@ MIME_TO_EXTENSION = {
     'text/PGP': '.pgp',
     'application/vnd.iccprofile': '.icc',
     'message/rfc822': '.eml',
+    'application/x-itunes-library': '.itl',
+    'application/x-itunes-database': '.itdb',
+    'application/x-archive': '.arc',
+    'image/x-thumbnail': '.tn',
 }
 
 
@@ -313,22 +318,23 @@ def get_enhanced_mime_type(file_path, mime_detector):
     
     # If we get generic octet-stream, try harder
     if mime_type == 'application/octet-stream':
-        # Try content analysis first (fastest)
+        # Try content analysis first (fastest, most reliable)
         specific_type = identify_by_content_analysis(file_path)
         if specific_type:
             return specific_type
         
-        # Try file command
+        # Try file command (very good at obscure formats)
         specific_type = identify_with_file_command(file_path)
         if specific_type:
             return specific_type
         
-        # Try binwalk if available
+        # Try binwalk if available (good for embedded/firmware)
         specific_type = identify_with_binwalk(file_path)
         if specific_type:
             return specific_type
         
-        # Last resort: check file extension
+        # LAST RESORT ONLY: check file extension for truly unknown formats
+        # Only use this for proprietary formats that have no magic bytes
         specific_type = identify_by_extension(file_path)
         if specific_type:
             return specific_type

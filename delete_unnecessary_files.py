@@ -1,16 +1,99 @@
 #!/usr/bin/env python3
 """
-Script to recursively scan a directory and count files by MIME type.
-Uses multiple detection methods to accurately identify files, especially octet-stream.
+Script to delete files that are NOT photos, videos, music, or documents.
+Keeps only the essential media and document files.
 """
 
 import os
 import sys
 import subprocess
+import argparse
 from pathlib import Path
 from collections import defaultdict
 import magic
 from tqdm import tqdm
+
+
+# MIME types to KEEP (everything else will be deleted)
+KEEP_MIME_TYPES = {
+    # Photos/Images
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/tiff',
+    'image/bmp',
+    'image/webp',
+    'image/svg+xml',
+    'image/heic',
+    'image/jxl',
+    'image/x-tga',
+    'image/x-icns',
+    'image/vnd.microsoft.icon',
+    'image/g3fax',
+    'image/vnd.dwg',
+    'image/wmf',
+    'image/x-win-bitmap',
+    'image/x-atari-degas',
+    'image/vnd.adobe.photoshop',
+    'image/x-award-bioslogo',
+    'image/x-pict',
+    'image/x-xcf',
+    'image/x-xpixmap',
+    
+    # Videos
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/x-ms-asf',
+    'video/x-ms-wmv',
+    'video/webm',
+    'video/ogg',
+    'video/3gpp',
+    'video/3gpp2',
+    'video/x-flv',
+    'video/x-m4v',
+    'video/mpeg',
+    'video/MP2T',
+    'video/mpeg4-generic',
+    'video/x-matroska',
+    
+    # Music/Audio
+    'audio/mpeg',
+    'audio/ogg',
+    'audio/x-m4a',
+    'audio/x-wav',
+    'audio/x-aiff',
+    'audio/midi',
+    'audio/AMR',
+    'audio/x-mp4a-latm',
+    'audio/x-hx-aac-adts',
+    'audio/x-syx',
+    'audio/flac',
+    'audio/aac',
+    'audio/x-ms-wma',
+    
+    # Documents (human-readable)
+    'text/plain',
+    'text/html',
+    'text/xml',
+    'application/xml',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-office',
+    'application/onenote',
+    'text/rtf',
+    'application/rtf',
+    'text/csv',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/json',  # Data files
+}
 
 
 def identify_with_binwalk(file_path):
@@ -322,20 +405,11 @@ def get_enhanced_mime_type(file_path, mime_detector):
     return mime_type
 
 
-def scan_directory(directory_path):
+def scan_and_delete(directory_path, dry_run=True, verbose=False):
     """
-    Recursively scan a directory and count files by MIME type.
-    
-    Args:
-        directory_path: Path to the directory to scan
-        
-    Returns:
-        Dictionary mapping MIME types to file counts
+    Scan directory and delete files that are NOT photos, videos, music, or documents.
     """
-    mime_counts = defaultdict(int)
     mime_detector = magic.Magic(mime=True)
-    
-    # Convert to Path object
     root_path = Path(directory_path).resolve()
     
     if not root_path.exists():
@@ -347,76 +421,170 @@ def scan_directory(directory_path):
         sys.exit(1)
     
     print(f"Scanning directory: {root_path}")
-    print("Counting files...")
+    if dry_run:
+        print("DRY RUN MODE - No files will be deleted")
+    else:
+        print("⚠️  DELETION MODE - Files will be permanently deleted!")
     
-    # First, collect all file paths to get total count
+    print("\nKeeping ONLY: Photos, Videos, Music, and Documents")
+    print("Everything else will be deleted")
+    print("\nCounting files...")
+    
+    # Collect all file paths
     file_paths = [f for f in root_path.rglob('*') if f.is_file()]
     total_files = len(file_paths)
     
     print(f"Found {total_files} files to process")
     print("-" * 60)
     
-    # Process files with progress bar
-    for file_path in tqdm(file_paths, desc="Processing files", unit="file"):
+    # Track statistics
+    files_to_delete = []
+    files_to_keep = []
+    mime_counts_delete = defaultdict(int)
+    mime_counts_keep = defaultdict(int)
+    total_size = 0
+    
+    # Scan files with progress bar
+    progress_bar = tqdm(file_paths, desc="Analyzing files", unit="file")
+    for file_path in progress_bar:
         try:
-            # Get enhanced MIME type using multiple detection methods
             mime_type = get_enhanced_mime_type(file_path, mime_detector)
-            mime_counts[mime_type] += 1
+            file_size = file_path.stat().st_size
+            
+            if mime_type in KEEP_MIME_TYPES:
+                files_to_keep.append((file_path, mime_type))
+                mime_counts_keep[mime_type] += 1
+                if verbose:
+                    tqdm.write(f"  [KEEP] {file_path.name} ({mime_type})")
+            else:
+                files_to_delete.append((file_path, mime_type, file_size))
+                mime_counts_delete[mime_type] += 1
+                total_size += file_size
+                if verbose:
+                    tqdm.write(f"  [DELETE] {file_path.name} ({mime_type})")
+                    
         except Exception as e:
-            # Handle files that can't be read
-            tqdm.write(f"Warning: Could not determine MIME type for {file_path}: {e}")
-            mime_counts['error/unknown'] += 1
+            if verbose:
+                tqdm.write(f"  [ERROR] Could not process {file_path}: {e}")
     
-    return mime_counts
+    # Print summary
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    print("=" * 80)
+    
+    print(f"\n✓ Files to KEEP ({len(files_to_keep)} files):")
+    print("-" * 80)
+    for mime_type in sorted(mime_counts_keep.keys()):
+        count = mime_counts_keep[mime_type]
+        print(f"  {mime_type:<60} {count:>6} files")
+    
+    print(f"\n✗ Files to DELETE ({len(files_to_delete)} files):")
+    print("-" * 80)
+    for mime_type in sorted(mime_counts_delete.keys()):
+        count = mime_counts_delete[mime_type]
+        print(f"  {mime_type:<60} {count:>6} files")
+    
+    print("-" * 80)
+    print(f"  {'TOTAL to KEEP':<60} {len(files_to_keep):>6} files")
+    print(f"  {'TOTAL to DELETE':<60} {len(files_to_delete):>6} files")
+    print(f"  {'Space to be freed':<60} {format_size(total_size):>6}")
+    print("=" * 80)
+    
+    # Perform deletion if not dry run
+    if not dry_run and files_to_delete:
+        print("\n⚠️  Deleting files...")
+        deleted_count = 0
+        deleted_size = 0
+        
+        progress_bar = tqdm(files_to_delete, desc="Deleting files", unit="file")
+        for file_path, mime_type, file_size in progress_bar:
+            try:
+                file_path.unlink()
+                deleted_count += 1
+                deleted_size += file_size
+                if verbose:
+                    tqdm.write(f"  ✓ Deleted: {file_path.name}")
+            except Exception as e:
+                tqdm.write(f"  ✗ Error deleting {file_path.name}: {e}")
+        
+        print(f"\n✓ Successfully deleted {deleted_count} of {len(files_to_delete)} files")
+        print(f"✓ Freed {format_size(deleted_size)} of space")
+        print(f"✓ Kept {len(files_to_keep)} media and document files")
+    elif not files_to_delete:
+        print("\nℹ️  No files need to be deleted.")
+    else:
+        print("\nℹ️  This was a dry run. No files were deleted.")
+        print("   Run with --delete flag to actually delete files.")
 
 
-def print_results(mime_counts):
-    """
-    Print the MIME type counts in a formatted table.
-    
-    Args:
-        mime_counts: Dictionary mapping MIME types to counts
-    """
-    if not mime_counts:
-        print("No files found.")
-        return
-    
-    # Sort by count (descending), then by MIME type (ascending)
-    sorted_counts = sorted(mime_counts.items(), key=lambda x: (-x[1], x[0]))
-    
-    # Calculate total
-    total_files = sum(mime_counts.values())
-    
-    # Print results
-    print("\nMIME Type Distribution:")
-    print("=" * 60)
-    print(f"{'MIME Type':<40} {'Count':>10}")
-    print("-" * 60)
-    
-    for mime_type, count in sorted_counts:
-        percentage = (count / total_files) * 100
-        print(f"{mime_type:<40} {count:>10} ({percentage:>5.1f}%)")
-    
-    print("-" * 60)
-    print(f"{'TOTAL':<40} {total_files:>10}")
-    print("=" * 60)
+def format_size(size_bytes):
+    """Format bytes into human-readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.2f} PB"
 
 
 def main():
     """Main entry point."""
-    if len(sys.argv) < 2:
-        print("Usage: python mime_counter.py <directory_path>")
-        print("\nExample:")
-        print("  python mime_counter.py /path/to/directory")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Delete all files except photos, videos, music, and documents',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Files that will be KEPT:
+  - Photos: JPEG, PNG, GIF, TIFF, BMP, WebP, SVG, HEIC, PSD, etc.
+  - Videos: MP4, MOV, AVI, WMV, MKV, FLV, MPEG, WebM, etc.
+  - Music: MP3, OGG, M4A, WAV, FLAC, AAC, MIDI, etc.
+  - Documents: PDF, Word, Excel, PowerPoint, Text, HTML, XML, CSV, etc.
+
+Everything else will be DELETED:
+  - Source code (Java, C, C++, JavaScript, Python, etc.)
+  - Archives (ZIP, GZIP, TAR, RAR, etc.)
+  - Executables and applications
+  - Databases
+  - System files
+  - And more...
+
+Examples:
+  # Dry run (default) - see what would be deleted
+  python delete_unnecessary_files.py /path/to/directory
+  
+  # Actually delete files
+  python delete_unnecessary_files.py /path/to/directory --delete
+  
+  # Show verbose output
+  python delete_unnecessary_files.py /path/to/directory --delete --verbose
+        '''
+    )
     
-    directory_path = sys.argv[1]
+    parser.add_argument('directory', help='Directory to scan')
+    parser.add_argument('--delete', action='store_true', 
+                       help='Actually delete files (default is dry-run)')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                       help='Show detailed output for each file')
+    parser.add_argument('--debug', action='store_true',
+                       help='Alias for --verbose')
     
-    # Scan directory and count MIME types
-    mime_counts = scan_directory(directory_path)
+    args = parser.parse_args()
     
-    # Print results
-    print_results(mime_counts)
+    if args.debug:
+        args.verbose = True
+    
+    # Confirm if not dry run
+    if args.delete:
+        print("\n⚠️  WARNING: This will permanently delete all files except photos, videos, music, and documents!")
+        print(f"   Directory: {args.directory}")
+        print("\n   Files to KEEP: Photos, Videos, Music, Documents")
+        print("   Files to DELETE: Everything else (source code, archives, executables, etc.)")
+        response = input("\nAre you sure you want to continue? (yes/no): ")
+        if response.lower() != 'yes':
+            print("Cancelled.")
+            sys.exit(0)
+        print()
+    
+    # Scan and delete
+    scan_and_delete(args.directory, dry_run=not args.delete, verbose=args.verbose)
 
 
 if __name__ == "__main__":
