@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 import magic
+from tqdm import tqdm
 
 
 def scan_directory(directory_path):
@@ -36,20 +37,25 @@ def scan_directory(directory_path):
         sys.exit(1)
     
     print(f"Scanning directory: {root_path}")
+    print("Counting files...")
+    
+    # First, collect all file paths to get total count
+    file_paths = [f for f in root_path.rglob('*') if f.is_file()]
+    total_files = len(file_paths)
+    
+    print(f"Found {total_files} files to process")
     print("-" * 60)
     
-    # Walk through directory tree
-    for file_path in root_path.rglob('*'):
-        # Skip directories, only process files
-        if file_path.is_file():
-            try:
-                # Get MIME type using libmagic
-                mime_type = mime_detector.from_file(str(file_path))
-                mime_counts[mime_type] += 1
-            except Exception as e:
-                # Handle files that can't be read
-                print(f"Warning: Could not determine MIME type for {file_path}: {e}", file=sys.stderr)
-                mime_counts['error/unknown'] += 1
+    # Process files with progress bar
+    for file_path in tqdm(file_paths, desc="Processing files", unit="file"):
+        try:
+            # Get MIME type using libmagic
+            mime_type = mime_detector.from_file(str(file_path))
+            mime_counts[mime_type] += 1
+        except Exception as e:
+            # Handle files that can't be read
+            tqdm.write(f"Warning: Could not determine MIME type for {file_path}: {e}")
+            mime_counts['error/unknown'] += 1
     
     return mime_counts
 
