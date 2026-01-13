@@ -44,16 +44,32 @@ class AIProvider(ABC):
 class OpenAIProvider(AIProvider):
     """OpenAI API provider."""
     
-    def __init__(self, api_key: str, model: str = "gpt-4"):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4",
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+        response_format: str = "json_object",
+        system_prompt: str = "You are an expert file organizer. Generate clean, logical directory structures in JSON format. You can reorganize and restructure categories as you process new data."
+    ):
         """
         Initialize OpenAI provider.
         
         Args:
             api_key: OpenAI API key
             model: Model to use (default: gpt-4)
+            temperature: Model temperature (default: 0.3)
+            max_tokens: Maximum tokens to generate (default: 4096)
+            response_format: Response format type (default: json_object)
+            system_prompt: System prompt for the AI
         """
         self.api_key = api_key
         self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.response_format = response_format
+        self.system_prompt = system_prompt
         self._client = None
     
     def _get_client(self):
@@ -84,28 +100,42 @@ class OpenAIProvider(AIProvider):
             print(f"[DEBUG] OpenAI: Sending request to {self.model}...")
             print(f"[DEBUG] OpenAI: Prompt length: {len(prompt)} chars")
         
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
+        completion_params = {
+            "model": self.model,
+            "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert file organizer. Generate clean, logical directory structures in JSON format."
+                    "content": self.system_prompt
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            response_format={"type": "json_object"},
-            temperature=0.3
-        )
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
+        }
+        
+        if self.response_format == "json_object":
+            completion_params["response_format"] = {"type": "json_object"}
+        
+        response = client.chat.completions.create(**completion_params)
         
         if debug:
             print(f"[DEBUG] OpenAI: Received response")
             print(f"[DEBUG] OpenAI: Response length: {len(response.choices[0].message.content)} chars")
         
-        result = json.loads(response.choices[0].message.content)
-        return result.get('structure', current_structure)
+        try:
+            result = json.loads(response.choices[0].message.content)
+            # Validate structure has required keys
+            if 'dirs' in result and 'files' in result:
+                return result
+            else:
+                print(f"Warning: Invalid structure format from OpenAI")
+                return current_structure
+        except json.JSONDecodeError:
+            print(f"Warning: Failed to parse OpenAI response")
+            return current_structure
     
     def test_connection(self) -> bool:
         """Test OpenAI connection."""
@@ -144,46 +174,66 @@ Current theoretical structure:
 {files_section}
 
 Your task:
-1. Analyze the files in the chunk
+1. Analyze the files in this chunk
 2. Review the current theoretical structure
-3. Generate an UPDATED directory structure that logically organizes these files
-4. The structure should only contain directories (folders), no file placements yet
-5. Create semantic, clear category names
-6. Respond with ONLY a JSON object in this format:
+3. Generate an UPDATED directory structure that logically organizes ALL files seen so far
+4. **IMPORTANT**: You can and SHOULD reorganize the existing structure when new data suggests a better organization
+   - Example: If you previously created "photos/" flat, but now see photos organized by event/location, 
+     restructure to "photos/HOBY/", "photos/Cancun/", etc.
+   - You can consolidate categories, split them, rename them, or restructure hierarchies as needed
+   - Each chunk gives you new information - use it to improve the organization
+5. **PLACE each file from the current chunk into the appropriate category**
+   - Add file names (not full paths) to the "files" arrays
+   - Files should be placed in the most specific/appropriate category
+6. Create semantic, clear category names
+7. Respond with ONLY a JSON object in this EXACT format:
 
 {{
-  "structure": {{
-    "dirs": {{
-      "CategoryName": {{
-        "dirs": {{}},
-        "files": []
-      }}
-    }},
-    "files": []
-  }}
+  "dirs": {{
+    "CategoryName": {{
+      "dirs": {{}},
+      "files": ["example.jpg", "photo.png"]
+    }}
+  }},
+  "files": []
 }}
 
 Rules:
 - Use clear, descriptive directory names
 - Group related content together
 - Don't create too many top-level categories
-- Empty "files" arrays are required in the format
+- REORGANIZE the structure when patterns emerge from new data
+- Think holistically about the entire dataset, not just the current chunk
+- Place ALL files from the current chunk into appropriate categories
 - Return ONLY valid JSON, nothing else"""
 
 
 class AnthropicProvider(AIProvider):
     """Anthropic (Claude) API provider."""
     
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-sonnet-20241022",
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+        system_prompt: str = "You are an expert file organizer. Generate clean, logical directory structures in JSON format. You can reorganize and restructure categories as you process new data."
+    ):
         """
         Initialize Anthropic provider.
         
         Args:
             api_key: Anthropic API key
             model: Model to use
+            temperature: Model temperature (default: 0.3)
+            max_tokens: Maximum tokens to generate (default: 4096)
+            system_prompt: System prompt for the AI (used in user message since Anthropic doesn't have separate system role)
         """
         self.api_key = api_key
         self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.system_prompt = system_prompt
         self._client = None
     
     def _get_client(self):
@@ -216,8 +266,8 @@ class AnthropicProvider(AIProvider):
         
         response = client.messages.create(
             model=self.model,
-            max_tokens=4096,
-            temperature=0.3,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
             messages=[
                 {
                     "role": "user",
@@ -247,7 +297,12 @@ class AnthropicProvider(AIProvider):
                 print(f"[DEBUG] Anthropic: Parsing JSON response...")
             
             result = json.loads(json_str)
-            return result.get('structure', current_structure)
+            # Validate structure has required keys
+            if 'dirs' in result and 'files' in result:
+                return result
+            else:
+                print(f"Warning: Invalid structure format from Anthropic")
+                return current_structure
         except json.JSONDecodeError:
             # Fallback: return current structure if parsing fails
             print(f"Warning: Failed to parse AI response: {content}")
@@ -296,30 +351,37 @@ Current theoretical structure:
 {files_section}
 
 Your task:
-1. Analyze the files in the chunk
+1. Analyze the files in this chunk
 2. Review the current theoretical structure
-3. Generate an UPDATED directory structure that logically organizes these files
-4. The structure should only contain directories (folders), no file placements yet
-5. Create semantic, clear category names
-6. Respond with ONLY a JSON object in this format:
+3. Generate an UPDATED directory structure that logically organizes ALL files seen so far
+4. **IMPORTANT**: You can and SHOULD reorganize the existing structure when new data suggests a better organization
+   - Example: If you previously created "photos/" flat, but now see photos organized by event/location, 
+     restructure to "photos/HOBY/", "photos/Cancun/", etc.
+   - You can consolidate categories, split them, rename them, or restructure hierarchies as needed
+   - Each chunk gives you new information - use it to improve the organization
+5. **PLACE each file from the current chunk into the appropriate category**
+   - Add file names (not full paths) to the "files" arrays
+   - Files should be placed in the most specific/appropriate category
+6. Create semantic, clear category names
+7. Respond with ONLY a JSON object in this EXACT format:
 
 {{
-  "structure": {{
-    "dirs": {{
-      "CategoryName": {{
-        "dirs": {{}},
-        "files": []
-      }}
-    }},
-    "files": []
-  }}
+  "dirs": {{
+    "CategoryName": {{
+      "dirs": {{}},
+      "files": ["example.jpg", "photo.png"]
+    }}
+  }},
+  "files": []
 }}
 
 Rules:
 - Use clear, descriptive directory names
 - Group related content together
 - Don't create too many top-level categories
-- Empty "files" arrays are required in the format
+- REORGANIZE the structure when patterns emerge from new data
+- Think holistically about the entire dataset, not just the current chunk
+- Place ALL files from the current chunk into appropriate categories
 - Return ONLY valid JSON, nothing else"""
 
 
@@ -329,7 +391,10 @@ class OllamaProvider(AIProvider):
     def __init__(
         self,
         model: str = "llama2",
-        base_url: str = "http://localhost:11434"
+        base_url: str = "http://localhost:11434",
+        temperature: float = 0.3,
+        num_predict: int = 2048,
+        system_prompt: str = "You are an expert file organizer. Generate clean, logical directory structures in JSON format. You can reorganize and restructure categories as you process new data."
     ):
         """
         Initialize Ollama provider.
@@ -337,9 +402,15 @@ class OllamaProvider(AIProvider):
         Args:
             model: Model name (e.g., 'llama2', 'mistral', 'codellama')
             base_url: Ollama server URL
+            temperature: Model temperature (default: 0.3)
+            num_predict: Maximum tokens to generate (default: 2048)
+            system_prompt: System prompt for the AI
         """
         self.model = model
         self.base_url = base_url
+        self.temperature = temperature
+        self.num_predict = num_predict
+        self.system_prompt = system_prompt
         self._client = None
     
     def _get_client(self):
@@ -377,7 +448,7 @@ class OllamaProvider(AIProvider):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert file organizer. Generate clean, logical directory structures in JSON format."
+                    "content": self.system_prompt
                 },
                 {
                     "role": "user",
@@ -386,8 +457,8 @@ class OllamaProvider(AIProvider):
             ],
             format="json",
             options={
-                "temperature": 0.3,
-                "num_predict": 2048
+                "temperature": self.temperature,
+                "num_predict": self.num_predict
             }
         )
         
@@ -403,7 +474,12 @@ class OllamaProvider(AIProvider):
             result = json.loads(content)
             if debug:
                 print(f"[DEBUG] Ollama: Successfully parsed JSON")
-            return result.get('structure', current_structure)
+            # Validate structure has required keys
+            if 'dirs' in result and 'files' in result:
+                return result
+            else:
+                print(f"Warning: Invalid structure format from Ollama")
+                return current_structure
         except json.JSONDecodeError:
             print(f"Warning: Failed to parse Ollama response: {content}")
             if debug:
@@ -447,28 +523,34 @@ Current theoretical structure:
 {files_section}
 
 Your task:
-1. Analyze the files in the chunk
+1. Analyze the files in this chunk
 2. Review the current theoretical structure
-3. Generate an UPDATED directory structure that logically organizes these files
-4. The structure should only contain directories (folders), no file placements yet
-5. Create semantic, clear category names
-6. Respond with ONLY a JSON object in this format:
+3. Generate an UPDATED directory structure that logically organizes ALL files seen so far
+4. **IMPORTANT**: You can and SHOULD reorganize the existing structure when new data suggests a better organization
+   - Example: If you previously created "photos/" flat, but now see photos organized by event/location, 
+     restructure to "photos/HOBY/", "photos/Cancun/", etc.
+   - You can consolidate categories, split them, rename them, or restructure hierarchies as needed
+   - Each chunk gives you new information - use it to improve the organization
+5. **PLACE each file from the current chunk into the appropriate category**
+   - Add file names (not full paths) to the \"files\" arrays
+   - Files should be placed in the most specific/appropriate category
+6. Create semantic, clear category names
+7. Respond with ONLY a JSON object in this EXACT format:
 
 {{
-  "structure": {{
-    "dirs": {{
-      "CategoryName": {{
-        "dirs": {{}},
-        "files": []
-      }}
-    }},
-    "files": []
-  }}
+  \"dirs\": {{
+    \"CategoryName\": {{
+      \"dirs\": {{}},\n      \"files\": [\"example.jpg\", \"photo.png\"]
+    }}
+  }},
+  \"files\": []
 }}
 
 Rules:
 - Use clear, descriptive directory names
 - Group related content together
 - Don't create too many top-level categories
-- Empty "files" arrays are required in the format
+- REORGANIZE the structure when patterns emerge from new data
+- Think holistically about the entire dataset, not just the current chunk
+- Place ALL files from the current chunk into appropriate categories
 - Return ONLY valid JSON, nothing else"""

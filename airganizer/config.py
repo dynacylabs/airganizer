@@ -13,17 +13,23 @@ class Config:
         'ai_provider': 'ollama',  # 'openai', 'anthropic', or 'ollama'
         'chunk_size': 4000,
         'format': 'pathlist',  # 'json', 'pathlist', or 'compact'
+        'temperature': 0.3,  # AI model temperature (0.0-1.0)
+        'system_prompt': 'You are an expert file organizer. Generate clean, logical directory structures in JSON format. You can reorganize and restructure categories as you process new data.',
         'openai': {
             'api_key': '',
-            'model': 'gpt-4'
+            'model': 'gpt-4',
+            'max_tokens': 4096,
+            'response_format': 'json_object'  # 'json_object' or 'text'
         },
         'anthropic': {
             'api_key': '',
-            'model': 'claude-3-5-sonnet-20241022'
+            'model': 'claude-3-5-sonnet-20241022',
+            'max_tokens': 4096
         },
         'ollama': {
             'model': 'llama2',
-            'base_url': 'http://localhost:11434'
+            'base_url': 'http://localhost:11434',
+            'num_predict': 2048  # Maximum tokens to generate
         }
     }
     
@@ -123,20 +129,24 @@ class Config:
             return {
                 'provider': 'openai',
                 'api_key': api_key,
-                'model': self.get('openai.model', 'gpt-4')
+                'model': self.get('openai.model', 'gpt-4'),
+                'max_tokens': self.get('openai.max_tokens', 4096),
+                'response_format': self.get('openai.response_format', 'json_object')
             }
         elif provider == 'anthropic':
             api_key = os.environ.get('ANTHROPIC_API_KEY') or self.get('anthropic.api_key', '')
             return {
                 'provider': 'anthropic',
                 'api_key': api_key,
-                'model': self.get('anthropic.model', 'claude-3-5-sonnet-20241022')
+                'model': self.get('anthropic.model', 'claude-3-5-sonnet-20241022'),
+                'max_tokens': self.get('anthropic.max_tokens', 4096)
             }
         else:  # ollama
             return {
                 'provider': 'ollama',
                 'model': self.get('ollama.model', 'llama2'),
-                'base_url': self.get('ollama.base_url', 'http://localhost:11434')
+                'base_url': self.get('ollama.base_url', 'http://localhost:11434'),
+                'num_predict': self.get('ollama.num_predict', 2048)
             }
     
     def create_default_config(self, path: Optional[str] = None):

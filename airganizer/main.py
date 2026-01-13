@@ -128,6 +128,10 @@ def main():
             # Create AI provider
             print(f"Using AI provider: {provider_config['provider']}")
             
+            # Get common AI parameters
+            temperature = config.get('temperature', 0.3)
+            system_prompt = config.get('system_prompt', 'You are an expert file organizer. Generate clean, logical directory structures in JSON format.')
+            
             if provider_config['provider'] == 'openai':
                 if not provider_config['api_key']:
                     print("Error: OpenAI API key not configured.", file=sys.stderr)
@@ -135,7 +139,11 @@ def main():
                     sys.exit(1)
                 ai_provider = OpenAIProvider(
                     api_key=provider_config['api_key'],
-                    model=provider_config['model']
+                    model=provider_config['model'],
+                    temperature=temperature,
+                    max_tokens=provider_config['max_tokens'],
+                    response_format=provider_config['response_format'],
+                    system_prompt=system_prompt
                 )
             elif provider_config['provider'] == 'anthropic':
                 if not provider_config['api_key']:
@@ -144,12 +152,18 @@ def main():
                     sys.exit(1)
                 ai_provider = AnthropicProvider(
                     api_key=provider_config['api_key'],
-                    model=provider_config['model']
+                    model=provider_config['model'],
+                    temperature=temperature,
+                    max_tokens=provider_config['max_tokens'],
+                    system_prompt=system_prompt
                 )
             else:  # ollama
                 ai_provider = OllamaProvider(
                     model=provider_config['model'],
-                    base_url=provider_config['base_url']
+                    base_url=provider_config['base_url'],
+                    temperature=temperature,
+                    num_predict=provider_config['num_predict'],
+                    system_prompt=system_prompt
                 )
             
             # Test connection

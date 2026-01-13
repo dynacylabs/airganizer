@@ -37,6 +37,7 @@ class StructureOrganizer:
         self.ai_provider = ai_provider
         self.chunker = TreeChunker(max_chunk_size=chunk_size)
         self.theoretical_structure = {'dirs': {}, 'files': []}
+        self.file_mapping = {}  # Maps source_path -> destination_path
         self.debug = debug
         self.temp_file = None
     
@@ -106,6 +107,12 @@ class StructureOrganizer:
                 
                 # Feed to AI
                 try:
+                    # Extract file list from chunk before sending
+                    chunk_files = self._extract_files_from_chunk(chunk, format_type)
+                    
+                    if self.debug:
+                        print(f"[DEBUG] Extracted {len(chunk_files)} files from chunk")
+                    
                     self.theoretical_structure = self.ai_provider.generate_structure(
                         file_chunk=chunk,
                         current_structure=self.theoretical_structure,
@@ -113,12 +120,16 @@ class StructureOrganizer:
                         debug=self.debug
                     )
                     
+                    # Build mapping from chunk files to their placements in structure
+                    self._update_file_mapping(chunk_files, self.theoretical_structure)
+                    
                     # Write current structure to temp file after each iteration
                     self._write_temp_structure()
                     
                     if self.debug:
                         print(f"[DEBUG] Received response from AI")
                         print(f"[DEBUG] Current structure has {len(self.theoretical_structure.get('dirs', {}))} top-level categories")
+                        print(f"[DEBUG] File mapping now contains {len(self.file_mapping)} entries")
                         print(f"[DEBUG] Updated temporary file: {self.temp_file}")
                     
                     if not progress_callback:
@@ -137,6 +148,81 @@ class StructureOrganizer:
         finally:
             # Always clean up temp file
             self._cleanup_temp_file()
+    
+    def _extract_files_from_chunk(self, chunk, format_type: str) -> list:
+        """
+        Extract list of file paths from a chunk.
+        
+        Args:
+            chunk: The chunk data (dict or string)
+            format_type: Format type ('json', 'pathlist', 'compact')
+            
+        Returns:
+            List of file paths
+        """
+        files = []
+        
+        if format_type == 'pathlist':
+            # Each line is a file path
+            lines = chunk.strip().split('\n')
+            files = [line.strip() for line in lines if line.strip()]
+        elif format_type == 'compact':
+            # Parse compact format - lines that don't end with ':' are files
+            lines = chunk.strip().split('\n')
+            for line in lines:
+                if line.strip() and not line.strip().endswith(':') and not line.strip().startswith('files:'):
+                    # Extract files from "files: file1, file2, ..." format
+                    if 'files:' in line:
+                        files_part = line.split('files:')[1].strip()
+                        file_list = [f.strip() for f in files_part.split(',')]
+                        files.extend(file_list)
+        else:  # json
+            # Recursively extract files from JSON structure
+            def extract_from_dict(d, path=''):
+                for filename in d.get('files', []):
+                    full_path = f\"{path}/{filename}\" if path else filename
+                    files.append(full_path)
+                for dirname, subdir in d.get('dirs', {}).items():
+                    new_path = f\"{path}/{dirname}\" if path else dirname
+                    extract_from_dict(subdir, new_path)
+            
+            extract_from_dict(chunk)
+        
+        return files
+    
+    def _update_file_mapping(self, chunk_files: list, structure: Dict[str, Any]):
+        """
+        Update file mapping based on where files were placed in the structure.
+        
+        Args:
+            chunk_files: List of original file paths from the chunk
+            structure: The updated theoretical structure
+        """
+        # Extract all files and their locations from the structure
+        placed_files = {}
+        
+        def collect_files(d, path=''):
+            for filename in d.get('files', []):
+                # Extract just the filename without path for matching
+                base_name = Path(filename).name if '/' in filename else filename
+                dest_path = f\"{path}/{base_name}\" if path else base_name
+                placed_files[base_name] = dest_path
+            
+            for dirname, subdir in d.get('dirs', {}).items():
+                new_path = f\"{path}/{dirname}\" if path else dirname
+                collect_files(subdir, new_path)
+        
+        collect_files(structure)
+        
+        # Match chunk files to their placements
+        for source_path in chunk_files:
+            # Get just the filename for matching
+            filename = Path(source_path).name
+            
+            if filename in placed_files:
+                self.file_mapping[source_path] = placed_files[filename]
+                if self.debug:
+                    print(f\"[DEBUG] Mapped: {source_path} -> {placed_files[filename]}\")
     
     def _write_temp_structure(self):
         """Write current theoretical structure to temporary file."""
@@ -162,15 +248,24 @@ class StructureOrganizer:
     
     def save_structure(self, output_path: str):
         """
-        Save the theoretical structure to a JSON file.
+        Save the theoretical structure and file mapping to JSON files.
         
         Args:
             output_path: Path to save the structure
         """
+        # Save structure
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(self.theoretical_structure, f, indent=2)
         
         print(f"\nStructure saved to: {output_path}")
+        
+        # Save mapping
+        mapping_path = output_path.replace('.json', '_mapping.json')
+        with open(mapping_path, 'w', encoding='utf-8') as f:
+            json.dump(self.file_mapping, f, indent=2)
+        
+        print(f"File mapping saved to: {mapping_path}")
+        print(f"Total files mapped: {len(self.file_mapping)}")
     
     def load_structure(self, input_path: str):
         """
@@ -250,3 +345,4 @@ class StructureOrganizer:
         summary = self.get_structure_summary()
         print(f"\nTotal categories: {summary['total_directories']}")
         print(f"Maximum depth: {summary['max_depth']}")
+        print(f"Files mapped: {len(self.file_mapping)}")

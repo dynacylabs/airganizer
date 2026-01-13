@@ -37,6 +37,33 @@ ai_provider: ollama
 chunk_size: 4000
 
 # ============================================================================
+# Output Format Configuration
+# ============================================================================
+# Format for sending file tree to AI provider
+# Options:
+# - pathlist: Most compact, one file path per line (RECOMMENDED)
+# - compact: Medium size, shows directory hierarchy with indentation
+# - json: Full JSON tree structure (most verbose)
+#
+# For large datasets, use 'pathlist' or 'compact' to save tokens
+format: pathlist
+
+# ============================================================================
+# AI Model Behavior Configuration
+# ============================================================================
+# Temperature controls randomness/creativity of AI responses (0.0-1.0)
+# - 0.0: Deterministic, consistent output
+# - 0.3: RECOMMENDED - Balanced consistency with some variation
+# - 0.7: More creative but less predictable
+# - 1.0: Maximum creativity/randomness
+temperature: 0.3
+
+# System prompt sent to AI model
+# Customize this to change how the AI organizes your files
+# The AI can reorganize and restructure categories as it processes new chunks
+system_prompt: 'You are an expert file organizer. Generate clean, logical directory structures in JSON format. You can reorganize and restructure categories as you process new data.'
+
+# ============================================================================
 # OpenAI Configuration
 # ============================================================================
 openai:
@@ -51,6 +78,16 @@ openai:
   #
   # For 650GB+: Use gpt-4-turbo with chunk_size: 300000-400000
   model: gpt-4-turbo
+  
+  # Maximum tokens to generate in response
+  # Higher values allow longer, more detailed structures
+  # Range: 1-4096 for most models, up to 128K for turbo
+  max_tokens: 4096
+  
+  # Response format type
+  # - json_object: Force JSON output (RECOMMENDED)
+  # - text: Allow text responses (may require parsing)
+  response_format: json_object
 
 # ============================================================================
 # Anthropic (Claude) Configuration
@@ -67,6 +104,11 @@ anthropic:
   #
   # For 650GB+: Use claude-3-5-sonnet with chunk_size: 500000-600000
   model: claude-3-5-sonnet-20241022
+  
+  # Maximum tokens to generate in response
+  # Higher values allow longer, more detailed structures
+  # Range: 1-4096 (Anthropic default limit)
+  max_tokens: 4096
 
 # ============================================================================
 # Ollama (Local AI) Configuration
@@ -92,11 +134,18 @@ ollama:
   # Base URL for Ollama server
   # Default is localhost. Change if running on a different machine.
   base_url: http://localhost:11434
+  
+  # Maximum tokens to generate in response
+  # Controls output length. Higher values = longer structures
+  # Range: Depends on model, typically 512-4096
+  # Note: Generation stops automatically when complete
+  num_predict: 2048
 
 # ============================================================================
 # Notes
 # ============================================================================
 # - Environment variables override config file settings
 # - All AI providers automatically use GPU when available
+# - All parameters can be configured here - no hardcoded values in the app!
 # - Ollama uses Metal on Mac, CUDA on NVIDIA, ROCm on AMD
 # - You can test connection with: python -m airganizer.main . --organize --debug
