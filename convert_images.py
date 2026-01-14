@@ -149,6 +149,39 @@ def identify_by_extension(file_path):
         '.nef': 'image/x-nikon-nef',
         '.arw': 'image/x-sony-arw',
         '.dng': 'image/x-adobe-dng',
+        '.orf': 'image/x-olympus-orf',
+        '.rw2': 'image/x-panasonic-rw2',
+        '.pef': 'image/x-pentax-pef',
+        '.sr2': 'image/x-sony-sr2',
+        '.raf': 'image/x-fuji-raf',
+        '.pcx': 'image/x-pcx',
+        '.ppm': 'image/x-portable-pixmap',
+        '.pgm': 'image/x-portable-graymap',
+        '.pbm': 'image/x-portable-bitmap',
+        '.pnm': 'image/x-portable-anymap',
+        '.sgi': 'image/sgi',
+        '.rgb': 'image/x-rgb',
+        '.pic': 'image/x-pict',
+        '.pict': 'image/x-pict',
+        '.exr': 'image/x-exr',
+        '.hdr': 'image/vnd.radiance',
+        '.rgbe': 'image/vnd.radiance',
+        '.iff': 'image/x-iff',
+        '.lbm': 'image/x-ilbm',
+        '.xbm': 'image/x-xbitmap',
+        '.xpm': 'image/x-xpixmap',
+        '.fits': 'image/fits',
+        '.fit': 'image/fits',
+        '.flif': 'image/flif',
+        '.jpe': 'image/jpeg',
+        '.jfif': 'image/jpeg',
+        '.jif': 'image/jpeg',
+        '.targa': 'image/x-tga',
+        '.cur': 'image/vnd.microsoft.icon',
+        '.icon': 'image/vnd.microsoft.icon',
+        '.dib': 'image/bmp',
+        '.j2c': 'image/jp2',
+        '.avif': 'image/avif',
         
         # Videos
         '.mp4': 'video/mp4',
@@ -575,24 +608,75 @@ def scan_and_convert_images(directory_path, format_type='JPEG', quality=95, dele
     # Collect all files
     all_files = [f for f in root_path.rglob('*') if f.is_file()]
     
-    # Filter image files (include all image types including SVG)
-    # Also check by extension as fallback for files MIME detection missed
+    # Filter image files - be aggressive about finding all possible images
+    # Check BOTH MIME type AND file extension since MIME detection can miss files
     print("Identifying image files...")
     image_files = []
+    
+    # Comprehensive list of image extensions
     image_extensions = {
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
-        '.heic', '.heif', '.heics', '.heifs', '.svg', '.svgz', '.ico',
-        '.psd', '.psb', '.xcf', '.tga', '.dds', '.jp2', '.jpx', '.j2k',
-        '.raw', '.cr2', '.nef', '.arw', '.dng'
+        # Common formats
+        '.jpg', '.jpeg', '.jpe', '.jfif', '.jif',
+        '.png', '.gif', '.bmp', '.dib',
+        '.tiff', '.tif',
+        '.webp',
+        '.ico', '.icon',
+        
+        # Modern/Apple formats
+        '.heic', '.heif', '.heics', '.heifs', '.avif',
+        
+        # Vector formats
+        '.svg', '.svgz',
+        
+        # Professional/RAW formats
+        '.psd', '.psb',  # Photoshop
+        '.xcf',  # GIMP
+        '.raw', '.cr2', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef', '.sr2', '.raf',  # Camera RAW
+        
+        # Other raster formats
+        '.tga', '.targa',  # Targa
+        '.dds',  # DirectDraw Surface
+        '.jp2', '.jpx', '.j2k', '.j2c',  # JPEG 2000
+        '.pcx',  # PC Paintbrush
+        '.ppm', '.pgm', '.pbm', '.pnm',  # Netpbm
+        '.sgi', '.rgb',  # SGI
+        '.pic', '.pict',  # PICT
+        '.exr',  # OpenEXR
+        '.hdr', '.rgbe',  # Radiance HDR
+        '.iff', '.lbm',  # IFF/LBM
+        '.webp',  # WebP
+        
+        # Windows formats
+        '.cur',  # Cursor
+        '.ani',  # Animated cursor
+        '.wmf', '.emf',  # Windows Metafile
+        
+        # Other
+        '.xbm', '.xpm',  # X BitMap/PixMap
+        '.fits', '.fit',  # Flexible Image Transport System
+        '.flif',  # Free Lossless Image Format
     }
     
-    for file_path in tqdm(all_files, desc="Checking MIME types", unit="file"):
-        mime_type = get_enhanced_mime_type(file_path, mime_detector)
-        # Include if MIME type is image/* OR if extension is an image extension
-        if (mime_type and mime_type.startswith('image/')) or file_path.suffix.lower() in image_extensions:
-            # Use MIME type if available, otherwise infer from extension
+    for file_path in tqdm(all_files, desc="Checking files", unit="file"):
+        is_image = False
+        mime_type = None
+        
+        # First check: file extension (fast)
+        if file_path.suffix.lower() in image_extensions:
+            is_image = True
+            # Try to get MIME type
+            mime_type = get_enhanced_mime_type(file_path, mime_detector)
             if not mime_type or not mime_type.startswith('image/'):
+                # Extension says image but MIME doesn't - trust extension, infer MIME
                 mime_type = identify_by_extension(file_path) or 'image/unknown'
+        
+        # Second check: MIME type (slower but catches renamed files)
+        if not is_image:
+            mime_type = get_enhanced_mime_type(file_path, mime_detector)
+            if mime_type and mime_type.startswith('image/'):
+                is_image = True
+        
+        if is_image:
             image_files.append((file_path, mime_type))
     
     print(f"\nFound {len(image_files)} image files to process")
