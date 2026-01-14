@@ -615,18 +615,12 @@ def scan_and_convert_images(directory_path, format_type='JPEG', quality=95, dele
     image_files = []
     
     for file_path in tqdm(all_files, desc="Checking MIME types", unit="file"):
-        try:
-            # Use exact same detection as scan_mime_types.py
-            mime_type = get_enhanced_mime_type(file_path, mime_detector)
-            
-            # Include if MIME type indicates image
-            if mime_type and mime_type.startswith('image/'):
-                image_files.append((file_path, mime_type))
-                
-        except Exception as e:
-            # Skip files that can't be read
-            if verbose:
-                tqdm.write(f"Warning: Could not check {file_path.name}: {e}")
+        # Use exact same detection as scan_mime_types.py (no try/except to match behavior)
+        mime_type = get_enhanced_mime_type(file_path, mime_detector)
+        
+        # Include if MIME type indicates image
+        if mime_type and mime_type.startswith('image/'):
+            image_files.append((file_path, mime_type))
     
     print(f"\nFound {len(image_files)} image files to process")
     
