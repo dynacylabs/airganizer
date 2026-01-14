@@ -75,6 +75,44 @@ def identify_by_extension(file_path):
     Fallback: identify by file extension.
     """
     extension_map = {
+        # Archives
+        '.zip': 'application/zip',
+        '.gz': 'application/gzip',
+        '.tar': 'application/x-tar',
+        '.7z': 'application/x-7z-compressed',
+        '.rar': 'application/x-rar',
+        '.arc': 'application/x-archive',
+        
+        # Documents
+        '.pdf': 'application/pdf',
+        
+        # Images
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff',
+        '.tif': 'image/tiff',
+        '.webp': 'image/webp',
+        '.ico': 'image/vnd.microsoft.icon',
+        '.svg': 'image/svg+xml',
+        '.tn': 'image/x-thumbnail',
+        
+        # Videos
+        '.mp4': 'video/mp4',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.wmv': 'video/x-ms-wmv',
+        '.flv': 'video/x-flv',
+        '.mkv': 'video/x-matroska',
+        '.webm': 'video/webm',
+        '.m4v': 'video/x-m4v',
+        '.3gp': 'video/3gpp',
+        '.3g2': 'video/3gpp2',
+        '.mpg': 'video/mpeg',
+        '.mpeg': 'video/mpeg',
+        
         # Audio
         '.mp3': 'audio/mpeg',
         '.wav': 'audio/x-wav',
@@ -83,8 +121,29 @@ def identify_by_extension(file_path):
         '.flac': 'audio/flac',
         '.aac': 'audio/aac',
         '.wma': 'audio/x-ms-wma',
-        '.opus': 'audio/opus',
-        '.amr': 'audio/AMR',
+        
+        # Databases
+        '.db': 'application/vnd.sqlite3',
+        '.sqlite': 'application/vnd.sqlite3',
+        '.sqlite3': 'application/vnd.sqlite3',
+        
+        # Executables
+        '.exe': 'application/vnd.microsoft.portable-executable',
+        '.dll': 'application/x-sharedlib',
+        '.so': 'application/x-sharedlib',
+        '.dylib': 'application/x-sharedlib',
+        '.jar': 'application/java-archive',
+        '.class': 'application/x-java-applet',
+        '.apk': 'application/vnd.android.package-archive',
+        '.deb': 'application/x-debian-package',
+        '.rpm': 'application/x-rpm',
+        '.dmg': 'application/x-apple-diskimage',
+        '.iso': 'application/x-iso9660-image',
+        
+        # Apple proprietary
+        '.itl': 'application/x-itunes-library',
+        '.itdb': 'application/x-itunes-database',
+        '.ipa': 'application/x-ios-app',
     }
     
     suffix = file_path.suffix.lower()
@@ -94,29 +153,120 @@ def identify_by_extension(file_path):
 def identify_by_content_analysis(file_path):
     """
     Analyze file content for magic bytes and patterns.
+    More comprehensive header analysis.
     """
     try:
         with open(file_path, 'rb') as f:
-            header = f.read(512)
+            header = f.read(512)  # Read first 512 bytes
             
             if len(header) < 4:
                 return None
             
+            # Archives
+            if header.startswith(b'PK\x03\x04') or header.startswith(b'PK\x05\x06'):
+                return 'application/zip'
+            elif header.startswith(b'\x1f\x8b'):
+                return 'application/gzip'
+            elif header.startswith(b'Rar!'):
+                return 'application/x-rar'
+            elif header.startswith(b'7z\xbc\xaf\x27\x1c'):
+                return 'application/x-7z-compressed'
+            
+            # Executables
+            elif header.startswith(b'\x7fELF'):
+                return 'application/x-executable'
+            elif header.startswith(b'MZ'):
+                return 'application/vnd.microsoft.portable-executable'
+            elif header.startswith(b'\xca\xfe\xba\xbe'):
+                return 'application/x-mach-binary'
+            
+            # Documents
+            elif header.startswith(b'%PDF'):
+                return 'application/pdf'
+            
+            # Images
+            elif header.startswith(b'\xff\xd8\xff'):
+                return 'image/jpeg'
+            elif header.startswith(b'\x89PNG\r\n\x1a\n'):
+                return 'image/png'
+            elif header.startswith(b'GIF87a') or header.startswith(b'GIF89a'):
+                return 'image/gif'
+            elif header.startswith(b'BM'):
+                return 'image/bmp'
+            elif header.startswith(b'II\x2a\x00') or header.startswith(b'MM\x00\x2a'):
+                return 'image/tiff'
+            elif header.startswith(b'RIFF') and b'WEBP' in header[:16]:
+                return 'image/webp'
+            
+            # Videos - More thorough detection
+            elif header.startswith(b'RIFF') and b'AVI ' in header[:16]:
+                return 'video/x-msvideo'
+            
+            # QuickTime/MOV - check for ftyp atom
+            elif len(header) >= 12:
+                # QuickTime files have atoms with 4-byte size + 4-byte type
+                if header[4:8] == b'ftyp':
+                    # Check for QuickTime/MOV signature
+                    if b'qt  ' in header[:32] or b'isom' in header[:32] or b'mp42' in header[:32]:
+                        # Could be MOV or MP4
+                        if b'qt  ' in header[:32]:
+                            return 'video/quicktime'
+                        else:
+                            return 'video/mp4'
+                elif header[4:8] == b'moov' or header[4:8] == b'mdat':
+                    return 'video/quicktime'
+            
+            # ASF/WMV/WMA files
+            elif header.startswith(b'\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c'):
+                # ASF format - check if it's video or audio
+                # Would need deeper parsing, but generally WMV
+                return 'video/x-ms-asf'
+            
+            # FLV (Flash Video)
+            elif header.startswith(b'FLV\x01'):
+                return 'video/x-flv'
+            
+            # Matroska/WebM (MKV)
+            elif header.startswith(b'\x1a\x45\xdf\xa3'):
+                return 'video/x-matroska'
+            
+            # MPEG video
+            elif header.startswith(b'\x00\x00\x01\xba') or header.startswith(b'\x00\x00\x01\xb3'):
+                return 'video/mpeg'
+            
             # Audio files
-            if header.startswith(b'ID3') or (len(header) >= 2 and header[0:2] == b'\xff\xfb'):
+            elif header.startswith(b'ID3') or (len(header) >= 2 and header[0:2] == b'\xff\xfb'):
                 return 'audio/mpeg'  # MP3
             elif header.startswith(b'OggS'):
+                # Could be audio or video, check for vorbis
                 if b'vorbis' in header:
                     return 'audio/ogg'
-                elif b'opus' in header:
-                    return 'audio/opus'
-                return 'audio/ogg'
+                elif b'theora' in header:
+                    return 'video/ogg'
+                return 'audio/ogg'  # Default to audio
             elif header.startswith(b'RIFF') and b'WAVE' in header[:16]:
                 return 'audio/x-wav'
             elif len(header) >= 8 and header[4:8] == b'ftyp' and b'M4A' in header[:32]:
                 return 'audio/x-m4a'
             elif header.startswith(b'fLaC'):
                 return 'audio/flac'
+            
+            # Database
+            elif header.startswith(b'SQLite format 3'):
+                return 'application/vnd.sqlite3'
+            
+            # Text-based formats
+            elif b'<html' in header.lower() or b'<!doctype html' in header.lower():
+                return 'text/html'
+            elif header.startswith(b'<?xml'):
+                return 'text/xml'
+            elif header.startswith(b'{') and b'"' in header:
+                # Likely JSON
+                return 'application/json'
+            
+            # iTunes Library files - proprietary format
+            # These typically don't have a standard magic number
+            # Let file command handle these
                 
     except Exception:
         pass
@@ -127,25 +277,33 @@ def identify_by_content_analysis(file_path):
 def get_enhanced_mime_type(file_path, mime_detector):
     """
     Get MIME type using multiple detection methods.
+    Prioritizes accuracy over generic octet-stream results.
     """
+    # First try: python-magic (libmagic)
     try:
         mime_type = mime_detector.from_file(str(file_path))
     except Exception:
         mime_type = 'error/unknown'
     
+    # If we get generic octet-stream, try harder
     if mime_type == 'application/octet-stream':
+        # Try content analysis first (fastest, most reliable)
         specific_type = identify_by_content_analysis(file_path)
         if specific_type:
             return specific_type
         
+        # Try file command (very good at obscure formats)
         specific_type = identify_with_file_command(file_path)
         if specific_type:
             return specific_type
         
+        # Try binwalk if available (good for embedded/firmware)
         specific_type = identify_with_binwalk(file_path)
         if specific_type:
             return specific_type
         
+        # LAST RESORT ONLY: check file extension for truly unknown formats
+        # Only use this for proprietary formats that have no magic bytes
         specific_type = identify_by_extension(file_path)
         if specific_type:
             return specific_type
