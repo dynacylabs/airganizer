@@ -605,79 +605,28 @@ def scan_and_convert_images(directory_path, format_type='JPEG', quality=95, dele
     
     print("\nCounting files...")
     
-    # Collect all files
+    # Collect all files (same as scan_mime_types.py)
     all_files = [f for f in root_path.rglob('*') if f.is_file()]
     
-    # Filter image files - be aggressive about finding all possible images
-    # Check BOTH MIME type AND file extension since MIME detection can miss files
+    print(f"Found {len(all_files)} total files")
+    
+    # Filter image files - check MIME type for ALL files (same as scan_mime_types.py)
     print("Identifying image files...")
     image_files = []
     
-    # Comprehensive list of image extensions
-    image_extensions = {
-        # Common formats
-        '.jpg', '.jpeg', '.jpe', '.jfif', '.jif',
-        '.png', '.gif', '.bmp', '.dib',
-        '.tiff', '.tif',
-        '.webp',
-        '.ico', '.icon',
-        
-        # Modern/Apple formats
-        '.heic', '.heif', '.heics', '.heifs', '.avif',
-        
-        # Vector formats
-        '.svg', '.svgz',
-        
-        # Professional/RAW formats
-        '.psd', '.psb',  # Photoshop
-        '.xcf',  # GIMP
-        '.raw', '.cr2', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef', '.sr2', '.raf',  # Camera RAW
-        
-        # Other raster formats
-        '.tga', '.targa',  # Targa
-        '.dds',  # DirectDraw Surface
-        '.jp2', '.jpx', '.j2k', '.j2c',  # JPEG 2000
-        '.pcx',  # PC Paintbrush
-        '.ppm', '.pgm', '.pbm', '.pnm',  # Netpbm
-        '.sgi', '.rgb',  # SGI
-        '.pic', '.pict',  # PICT
-        '.exr',  # OpenEXR
-        '.hdr', '.rgbe',  # Radiance HDR
-        '.iff', '.lbm',  # IFF/LBM
-        '.webp',  # WebP
-        
-        # Windows formats
-        '.cur',  # Cursor
-        '.ani',  # Animated cursor
-        '.wmf', '.emf',  # Windows Metafile
-        
-        # Other
-        '.xbm', '.xpm',  # X BitMap/PixMap
-        '.fits', '.fit',  # Flexible Image Transport System
-        '.flif',  # Free Lossless Image Format
-    }
-    
-    for file_path in tqdm(all_files, desc="Checking files", unit="file"):
-        is_image = False
-        mime_type = None
-        
-        # First check: file extension (fast)
-        if file_path.suffix.lower() in image_extensions:
-            is_image = True
-            # Try to get MIME type
+    for file_path in tqdm(all_files, desc="Checking MIME types", unit="file"):
+        try:
+            # Use exact same detection as scan_mime_types.py
             mime_type = get_enhanced_mime_type(file_path, mime_detector)
-            if not mime_type or not mime_type.startswith('image/'):
-                # Extension says image but MIME doesn't - trust extension, infer MIME
-                mime_type = identify_by_extension(file_path) or 'image/unknown'
-        
-        # Second check: MIME type (slower but catches renamed files)
-        if not is_image:
-            mime_type = get_enhanced_mime_type(file_path, mime_detector)
+            
+            # Include if MIME type indicates image
             if mime_type and mime_type.startswith('image/'):
-                is_image = True
-        
-        if is_image:
-            image_files.append((file_path, mime_type))
+                image_files.append((file_path, mime_type))
+                
+        except Exception as e:
+            # Skip files that can't be read
+            if verbose:
+                tqdm.write(f"Warning: Could not check {file_path.name}: {e}")
     
     print(f"\nFound {len(image_files)} image files to process")
     
