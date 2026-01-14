@@ -235,10 +235,17 @@ def scan_and_delete_small_images(directory_path, min_width=256, min_height=256, 
         mime_type = get_enhanced_mime_type(file_path, mime_detector)
         # Check if it's ANY image file (starts with "image/")
         if mime_type and mime_type.startswith('image/'):
-            image_files.append(file_path)
+            image_files.append((file_path, mime_type))
     
     print(f"\nFound {len(image_files)} images to analyze")
     print("-" * 80)
+    
+    # MIME types that are always garbage (icons, thumbnails)
+    ALWAYS_DELETE_TYPES = {
+        'image/vnd.microsoft.icon',  # .ico files
+        'image/x-icon',
+        'image/x-thumbnail',  # .tn files
+    }
     
     # Analyze images
     images_to_delete = []
@@ -246,7 +253,18 @@ def scan_and_delete_small_images(directory_path, min_width=256, min_height=256, 
     errors = []
     
     progress_bar = tqdm(image_files, desc="Analyzing images", unit="file")
-    for file_path in progress_bar:
+    for file_path, mime_type in progress_bar:
+        # Always delete icons and thumbnails regardless of size
+        if mime_type in ALWAYS_DELETE_TYPES:
+            file_size = file_path.stat().st_size
+            images_to_delete.append((file_path, None, None, file_size, f"icon/thumbnail ({mime_type})"))
+            if verbose:
+                tqdm.write(f"  [DELETE] {file_path.name} - {mime_type}")
+            continue
+        
+        # For other images, check dimensions
+        dimensions = get_image_dimensions(file_path)
+        # For other images, check dimensions
         dimensions = get_image_dimensions(file_path)
         
         if dimensions is None:
@@ -260,11 +278,11 @@ def scan_and_delete_small_images(directory_path, min_width=256, min_height=256, 
         
         # Delete if either dimension is smaller than threshold
         if width < min_width or height < min_height:
-            images_to_delete.append((file_path, width, height, file_size))
+            images_to_delete.append((file_path, width, height, file_size, f"{width}x{height}"))
             if verbose:
                 tqdm.write(f"  [DELETE] {file_path.name} ({width}x{height})")
         else:
-            images_to_keep.append((file_path, width, height, file_size))
+            images_to_keep.append((file_path, width, height, file_size, f"{width}x{height}"))
             if verbose:
                 tqdm.write(f"  [KEEP] {file_path.name} ({width}x{height})")
     
@@ -276,33 +294,47 @@ def scan_and_delete_small_images(directory_path, min_width=256, min_height=256, 
     print(f"\n✗ Images to DELETE ({len(images_to_delete)} files):")
     print("-" * 80)
     if images_to_delete:
-        # Group by size ranges
-        size_groups = {
-            'tiny (< 32x32)': [],
-            'small (32-64)': [],
-            'medium (64-128)': [],
-            'large (128-256)': []
-        }
+        # Separate icons/thumbnails from size-based deletions
+        icons_and_thumbs = [(f, reason) for f, w, h, s, reason in images_to_delete if w is None]
+        size_based = [(f, w, h, reason) for f, w, h, s, reason in images_to_delete if w is not None]
         
-        for file_path, width, height, file_size in images_to_delete:
-            max_dim = max(width, height)
-            if max_dim < 32:
-                size_groups['tiny (< 32x32)'].append((file_path, width, height))
-            elif max_dim < 64:
-                size_groups['small (32-64)'].append((file_path, width, height))
-            elif max_dim < 128:
-                size_groups['medium (64-128)'].append((file_path, width, height))
-            else:
-                size_groups['large (128-256)'].append((file_path, width, height))
+        if icons_and_thumbs:
+            print(f"\n  Icons/Thumbnails (always deleted): {len(icons_and_thumbs)} files")
+            if verbose:
+                for file_path, reason in icons_and_thumbs[:10]:
+                    print(f"    {file_path.name} - {reason}")
+                if len(icons_and_thumbs) > 10:
+                    print(f"    ... and {len(icons_and_thumbs) - 10} more")
         
-        for group_name, items in size_groups.items():
-            if items:
-                print(f"\n  {group_name}: {len(items)} files")
-                if verbose:
-                    for file_path, width, height in items[:10]:  # Show first 10
-                        print(f"    {file_path.name} ({width}x{height})")
-                    if len(items) > 10:
-                        print(f"    ... and {len(items) - 10} more")
+        if size_based:
+            print(f"\n  Small images (< {min_width}x{min_height}): {len(size_based)} files")
+            # Group by size ranges
+            size_groups = {
+                'tiny (< 32x32)': [],
+                'small (32-64)': [],
+                'medium (64-128)': [],
+                'large (128-256)': []
+            }
+            
+            for file_path, width, height, reason in size_based:
+                max_dim = max(width, height)
+                if max_dim < 32:
+                    size_groups['tiny (< 32x32)'].append((file_path, width, height))
+                elif max_dim < 64:
+                    size_groups['small (32-64)'].append((file_path, width, height))
+                elif max_dim < 128:
+                    size_groups['medium (64-128)'].append((file_path, width, height))
+                else:
+                    size_groups['large (128-256)'].append((file_path, width, height))
+            
+            for group_name, items in size_groups.items():
+                if items:
+                    print(f"\n    {group_name}: {len(items)} files")
+                    if verbose:
+                        for file_path, width, height in items[:5]:
+                            print(f"      {file_path.name} ({width}x{height})")
+                        if len(items) > 5:
+                            print(f"      ... and {len(items) - 5} more")
     
     print(f"\n✓ Images to KEEP ({len(images_to_keep)} files):")
     print(f"  All images >= {min_width}x{min_height} pixels")
@@ -328,12 +360,13 @@ def scan_and_delete_small_images(directory_path, min_width=256, min_height=256, 
         deleted_count = 0
         
         progress_bar = tqdm(images_to_delete, desc="Deleting images", unit="file")
-        for file_path, width, height, file_size in progress_bar:
+        for file_path, width, height, file_size, reason in progress_bar:
             try:
                 file_path.unlink()
                 deleted_count += 1
                 if verbose:
-                    tqdm.write(f"  ✓ Deleted: {file_path.name} ({width}x{height})")
+                    display_reason = reason if width is None else f"{width}x{height}"
+                    tqdm.write(f"  ✓ Deleted: {file_path.name} ({display_reason})")
             except Exception as e:
                 tqdm.write(f"  ✗ Error deleting {file_path.name}: {e}")
         
