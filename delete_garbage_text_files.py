@@ -163,22 +163,33 @@ def delete_garbage_text_files(directory_path, categories_to_delete, dry_run=True
     to_delete = []
     category_counts = defaultdict(int)
     category_sizes = defaultdict(int)
+    skipped_missing = 0
     
     for file_path in tqdm(text_files, desc="Analyzing", unit="file"):
-        category, confidence, reason = analyze_text_file(file_path)
-        file_size = file_path.stat().st_size
-        
-        category_counts[category] += 1
-        category_sizes[category] += file_size
-        
-        if category in categories_to_delete:
-            to_delete.append({
-                'path': file_path,
-                'category': category,
-                'size': file_size,
-                'confidence': confidence,
-                'reason': reason
-            })
+        try:
+            # Check if file still exists (might have been deleted by system)
+            if not file_path.exists():
+                skipped_missing += 1
+                continue
+            
+            category, confidence, reason = analyze_text_file(file_path)
+            file_size = file_path.stat().st_size
+            
+            category_counts[category] += 1
+            category_sizes[category] += file_size
+            
+            if category in categories_to_delete:
+                to_delete.append({
+                    'path': file_path,
+                    'category': category,
+                    'size': file_size,
+                    'confidence': confidence,
+                    'reason': reason
+                })
+        except (FileNotFoundError, PermissionError) as e:
+            # File was deleted or inaccessible between scans
+            skipped_missing += 1
+            continue
     
     # Print summary
     print("\n" + "=" * 80)
@@ -187,7 +198,9 @@ def delete_garbage_text_files(directory_path, categories_to_delete, dry_run=True
     
     total_delete_size = sum(item['size'] for item in to_delete)
     
-    print(f"\nTotal text files analyzed: {len(text_files)}")
+    print(f"\nTotal text files found: {len(text_files)}")
+    if skipped_missing > 0:
+        print(f"Files no longer accessible: {skipped_missing}")
     print(f"Files to delete: {len(to_delete)} ({total_delete_size / (1024*1024):.1f} MB)")
     
     print("\nBreakdown by category:")
@@ -223,10 +236,20 @@ def delete_garbage_text_files(directory_path, categories_to_delete, dry_run=True
     for item in progress_bar:
         file_path = item['path']
         try:
+            # Check if file still exists before trying to delete
+            if not file_path.exists():
+                if verbose:
+                    tqdm.write(f"  - Skipped: {file_path.name} (already deleted)")
+                continue
+                
             file_path.unlink()
             deleted.append(file_path)
             if verbose:
                 tqdm.write(f"  ✓ Deleted: {file_path.name} [{item['category']}]")
+        except FileNotFoundError:
+            # File was already deleted
+            if verbose:
+                tqdm.write(f"  - Skipped: {file_path.name} (already deleted)")
         except Exception as e:
             errors.append((file_path, str(e)))
             if verbose:
