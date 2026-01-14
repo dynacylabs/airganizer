@@ -15,6 +15,9 @@ from tqdm import tqdm
 
 try:
     from PIL import Image
+    from PIL import UnidentifiedImageError
+    # Increase decompression bomb limit for large legitimate images
+    Image.MAX_IMAGE_PIXELS = None  # Disable limit (or set to larger value like 500000000)
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -22,10 +25,24 @@ except ImportError:
     sys.exit(1)
 
 try:
+    import pillow_heif
+    # Register HEIF opener with Pillow
+    pillow_heif.register_heif_opener()
+    HEIF_AVAILABLE = True
+except ImportError:
+    HEIF_AVAILABLE = False
+
+try:
     import cairosvg
     CAIROSVG_AVAILABLE = True
 except ImportError:
     CAIROSVG_AVAILABLE = False
+
+try:
+    import imageio.v3 as iio
+    IMAGEIO_AVAILABLE = True
+except ImportError:
+    IMAGEIO_AVAILABLE = False
 
 
 def identify_with_binwalk(file_path):
@@ -108,9 +125,30 @@ def identify_by_extension(file_path):
         '.tiff': 'image/tiff',
         '.tif': 'image/tiff',
         '.webp': 'image/webp',
+        '.heic': 'image/heic',
+        '.heif': 'image/heif',
+        '.heics': 'image/heic-sequence',
+        '.heifs': 'image/heif-sequence',
+        '.avci': 'image/heic',
+        '.avcs': 'image/heic-sequence',
         '.ico': 'image/vnd.microsoft.icon',
         '.svg': 'image/svg+xml',
+        '.svgz': 'image/svg+xml',
+        '.psd': 'image/vnd.adobe.photoshop',
+        '.psb': 'image/vnd.adobe.photoshop',
+        '.xcf': 'image/x-xcf',
+        '.tga': 'image/x-tga',
+        '.dds': 'image/vnd.ms-dds',
+        '.jp2': 'image/jp2',
+        '.jpx': 'image/jpx',
+        '.j2k': 'image/j2k',
+        '.jpm': 'image/jpm',
         '.tn': 'image/x-thumbnail',
+        '.raw': 'image/x-raw',
+        '.cr2': 'image/x-canon-cr2',
+        '.nef': 'image/x-nikon-nef',
+        '.arw': 'image/x-sony-arw',
+        '.dng': 'image/x-adobe-dng',
         
         # Videos
         '.mp4': 'video/mp4',
@@ -210,6 +248,30 @@ def identify_by_content_analysis(file_path):
                 return 'image/tiff'
             elif header.startswith(b'RIFF') and b'WEBP' in header[:16]:
                 return 'image/webp'
+            # HEIC/HEIF (Apple format)
+            elif len(header) >= 12 and header[4:12] == b'ftypheic':
+                return 'image/heic'
+            elif len(header) >= 12 and header[4:12] == b'ftypheix':
+                return 'image/heic-sequence'
+            elif len(header) >= 12 and header[4:12] == b'ftyphevc':
+                return 'image/heic'
+            elif len(header) >= 12 and header[4:12] == b'ftyphevx':
+                return 'image/heic-sequence'
+            elif len(header) >= 12 and (header[4:12] == b'ftypmif1' or header[4:12] == b'ftypmsf1'):
+                return 'image/heif'
+            # Photoshop
+            elif header.startswith(b'8BPS'):
+                return 'image/vnd.adobe.photoshop'
+            # ICO
+            elif header.startswith(b'\x00\x00\x01\x00'):
+                return 'image/vnd.microsoft.icon'
+            # TGA (Truevision TGA/TARGA)
+            elif len(header) >= 18:
+                # TGA has no magic number, but check for common patterns
+                # Bytes 1-2 are color map type (0 or 1) and image type (0-11)
+                if header[1] in (0, 1) and header[2] in range(0, 12):
+                    # Could be TGA, return tentative type
+                    return 'image/x-tga'
             
             # Videos - More thorough detection
             elif header.startswith(b'RIFF') and b'AVI ' in header[:16]:
@@ -326,8 +388,9 @@ def get_enhanced_mime_type(file_path, mime_detector):
 
 def convert_image(input_path, output_path, format_type='JPEG', quality=95, verbose=False):
     """
-    Convert image file using Pillow (or cairosvg for SVG).
+    Convert image file using Pillow (or cairosvg for SVG, imageio as fallback).
     Preserves EXIF metadata where possible.
+    Handles HEIC, corrupted files, and various formats.
     
     Args:
         input_path: Input image file
@@ -338,9 +401,10 @@ def convert_image(input_path, output_path, format_type='JPEG', quality=95, verbo
     
     Returns: (success, error_message)
     """
+    img = None
     try:
         # Handle SVG files specially
-        if input_path.suffix.lower() == '.svg' or input_path.suffix.lower() == '.svgz':
+        if input_path.suffix.lower() in ('.svg', '.svgz'):
             if not CAIROSVG_AVAILABLE:
                 return False, "cairosvg not installed (required for SVG conversion)"
             
@@ -369,8 +433,23 @@ def convert_image(input_path, output_path, format_type='JPEG', quality=95, verbo
             
             return True, None
         
-        # Regular image files - use Pillow
-        with Image.open(input_path) as img:
+        # Try Pillow first (works for most formats including HEIC if pillow-heif installed)
+        try:
+            img = Image.open(input_path)
+            
+            # Load image data to catch truncated/corrupted files early
+            try:
+                img.load()
+            except (OSError, IOError) as e:
+                # Truncated or corrupted file, try imageio fallback
+                if IMAGEIO_AVAILABLE:
+                    if verbose:
+                        print(f"    Pillow failed ({e}), trying imageio fallback...")
+                    img.close()
+                    return convert_image_imageio(input_path, output_path, format_type, quality, verbose)
+                else:
+                    raise
+            
             # Preserve EXIF data
             exif = img.info.get('exif', b'')
             
@@ -399,8 +478,69 @@ def convert_image(input_path, output_path, format_type='JPEG', quality=95, verbo
             img.save(output_path, format=format_type, **save_kwargs)
             return True, None
             
+        except (OSError, IOError, UnidentifiedImageError) as e:
+            # Pillow can't handle this format, try imageio
+            if IMAGEIO_AVAILABLE:
+                if verbose:
+                    print(f"    Pillow failed, trying imageio fallback...")
+                if img:
+                    img.close()
+                return convert_image_imageio(input_path, output_path, format_type, quality, verbose)
+            else:
+                raise
+            
     except Exception as e:
+        if img:
+            try:
+                img.close()
+            except:
+                pass
         return False, str(e)
+    finally:
+        if img:
+            try:
+                img.close()
+            except:
+                pass
+
+
+def convert_image_imageio(input_path, output_path, format_type='JPEG', quality=95, verbose=False):
+    """
+    Fallback image converter using imageio.
+    Used when Pillow fails to open/convert an image.
+    
+    Returns: (success, error_message)
+    """
+    try:
+        # Read with imageio
+        img_array = iio.imread(input_path)
+        
+        # Convert to RGB if needed (imageio returns numpy array)
+        import numpy as np
+        if len(img_array.shape) == 2:
+            # Grayscale, convert to RGB
+            img_array = np.stack([img_array] * 3, axis=-1)
+        elif img_array.shape[2] == 4:
+            # RGBA, convert to RGB with white background
+            alpha = img_array[:, :, 3:4] / 255.0
+            rgb = img_array[:, :, :3]
+            white_bg = np.ones_like(rgb) * 255
+            img_array = (rgb * alpha + white_bg * (1 - alpha)).astype(np.uint8)
+        
+        # Convert numpy array back to PIL for saving
+        img = Image.fromarray(img_array)
+        
+        # Save
+        if format_type == 'JPEG':
+            img.save(output_path, format='JPEG', quality=quality, optimize=True)
+        else:
+            img.save(output_path, format='PNG', optimize=True)
+        
+        img.close()
+        return True, None
+        
+    except Exception as e:
+        return False, f"imageio fallback failed: {str(e)}"
 
 
 def scan_and_convert_images(directory_path, format_type='JPEG', quality=95, delete_original=False, dry_run=True, verbose=False):
@@ -436,20 +576,41 @@ def scan_and_convert_images(directory_path, format_type='JPEG', quality=95, dele
     all_files = [f for f in root_path.rglob('*') if f.is_file()]
     
     # Filter image files (include all image types including SVG)
+    # Also check by extension as fallback for files MIME detection missed
     print("Identifying image files...")
     image_files = []
+    image_extensions = {
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+        '.heic', '.heif', '.heics', '.heifs', '.svg', '.svgz', '.ico',
+        '.psd', '.psb', '.xcf', '.tga', '.dds', '.jp2', '.jpx', '.j2k',
+        '.raw', '.cr2', '.nef', '.arw', '.dng'
+    }
+    
     for file_path in tqdm(all_files, desc="Checking MIME types", unit="file"):
         mime_type = get_enhanced_mime_type(file_path, mime_detector)
-        if mime_type and mime_type.startswith('image/'):
+        # Include if MIME type is image/* OR if extension is an image extension
+        if (mime_type and mime_type.startswith('image/')) or file_path.suffix.lower() in image_extensions:
+            # Use MIME type if available, otherwise infer from extension
+            if not mime_type or not mime_type.startswith('image/'):
+                mime_type = identify_by_extension(file_path) or 'image/unknown'
             image_files.append((file_path, mime_type))
     
     print(f"\nFound {len(image_files)} image files to process")
     
-    # Check if we have SVGs but no cairosvg
+    # Check for missing optional dependencies
     svg_count = sum(1 for f, m in image_files if m == 'image/svg+xml')
     if svg_count > 0 and not CAIROSVG_AVAILABLE:
         print(f"\n⚠️  WARNING: Found {svg_count} SVG files but cairosvg is not installed.")
         print("   SVG files will fail to convert. Install with: pip install cairosvg")
+    
+    heic_count = sum(1 for f, m in image_files if 'heic' in m or 'heif' in m)
+    if heic_count > 0 and not HEIF_AVAILABLE:
+        print(f"\n⚠️  WARNING: Found {heic_count} HEIC/HEIF files but pillow-heif is not installed.")
+        print("   HEIC files will fail to convert. Install with: pip install pillow-heif")
+    
+    if not IMAGEIO_AVAILABLE:
+        print(f"\n⚠️  INFO: imageio not installed (optional fallback converter).")
+        print("   Some exotic/corrupted formats may fail. Install with: pip install imageio")
     
     print("-" * 80)
     
@@ -568,10 +729,18 @@ Default: JPEG at 95%% quality
 Metadata: EXIF data preserved for JPEG images
 
 Supported input formats:
-  - JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, SVG
-  - Any format Pillow supports
+  - Common: JPEG, PNG, GIF, BMP, TIFF, WebP, ICO
+  - Apple: HEIC, HEIF (requires pillow-heif)
+  - Vector: SVG (requires cairosvg)
+  - Advanced: TGA, PSD, DDS, JP2, RAW formats
+  - Any format Pillow or imageio supports
 
-Note: SVG conversion requires cairosvg (pip install cairosvg)
+Dependencies for special formats:
+  - HEIC/HEIF: pip install pillow-heif
+  - SVG: pip install cairosvg
+  - Fallback converter: pip install imageio
+
+Note: Script handles corrupted/truncated files gracefully
 
 Examples:
   # Dry run (default) - see what would be converted
