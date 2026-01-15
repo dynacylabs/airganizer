@@ -67,9 +67,18 @@ class Config:
             "models": {
                 "auto_download": False,  # Auto-download models if needed
                 "model_dir": str(Path.home() / '.cache' / 'airganizer' / 'models'),
-                "available_models": [],  # List of locally available models
+                "available_models": {},  # Dict of available models with constraints
+                # Format: {"model_name": {"enabled": bool, "max_ram_gb": float|null, "allow_online": bool}}
                 "explicit_mapping": {},  # e.g., {"application/pdf": "llama-vision", "image/*": "clip"}
-                "recommendations_cache": {}  # Cache AI recommendations per file type
+                "recommendations_cache": {},  # Cache AI recommendations per file type
+                "max_concurrent_loaded": 2,  # Max local models loaded simultaneously
+                "auto_unload_idle": True,  # Automatically unload idle models
+                "idle_timeout_seconds": 300  # Unload models idle for 5 minutes
+            },
+            "system": {
+                "max_ram_usage_gb": None,  # None = auto-detect, or set explicit limit
+                "require_gpu": False,  # Require GPU for local models
+                "respect_resource_limits": True  # Filter models based on system resources
             },
             "scan": {
                 "use_binwalk": False,
@@ -145,17 +154,55 @@ class Config:
         """Check if models should be auto-downloaded."""
         return self.get('models.auto_download', False)
     
-    def get_available_models(self) -> List[str]:
-        """Get list of available models."""
-        return self.get('models.available_models', [])
+    def get_available_models(self) -> Dict[str, Dict[str, Any]]:
+        """Get dict of available models with their constraints."""
+        return self.get('models.available_models', {})
     
-    def add_available_model(self, model_name: str) -> None:
-        """Add a model to the available models list."""
-        models = self.get('models.available_models', [])
-        if model_name not in models:
-            models.append(model_name)
-            self.set('models.available_models', models)
-            self.save()
+    def add_available_model(self, model_name: str, enabled: bool = True,
+                          max_ram_gb: Optional[float] = None,
+                          allow_online: bool = True) -> None:
+        """Add a model to the available models list with constraints."""
+        models_dict = self.get('models.available_models', {})
+        models_dict[model_name] = {
+            "enabled": enabled,
+            "max_ram_gb": max_ram_gb,
+            "allow_online": allow_online
+        }
+        self.set('models.available_models', models_dict)
+        self.save()
+    
+    def is_model_enabled(self, model_name: str) -> bool:
+        """Check if a model is enabled by user."""
+        models_dict = self.get('models.available_models', {})
+        if not models_dict:  # If not configured, all models are allowed
+            return True
+        if model_name not in models_dict:
+            return False  # If configured but not in list, not allowed
+        return models_dict[model_name].get("enabled", True)
+    
+    def get_model_ram_limit(self, model_name: str) -> Optional[float]:
+        """Get RAM limit for a specific model."""
+        models_dict = self.get('models.available_models', {})
+        if model_name in models_dict:
+            return models_dict[model_name].get("max_ram_gb")
+        return None
+    
+    def is_online_model_allowed(self, model_name: str) -> bool:
+        """Check if online model is allowed."""
+        models_dict = self.get('models.available_models', {})
+        if not models_dict:  # If not configured, all models are allowed
+            return True
+        if model_name not in models_dict:
+            return True  # If not explicitly configured, allow by default
+        return models_dict[model_name].get("allow_online", True)
+    
+    def get_system_ram_limit(self) -> Optional[float]:
+        """Get system-wide RAM limit in GB."""
+        return self.get('system.max_ram_usage_gb')
+    
+    def respect_resource_limits(self) -> bool:
+        """Check if resource limits should be enforced."""
+        return self.get('system.respect_resource_limits', True)
     
     def get_file_type_model(self, file_type: str) -> Optional[str]:
         """Get explicitly mapped model for a file type."""

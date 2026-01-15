@@ -3,7 +3,8 @@
 import json
 from typing import List, Dict, Any, Optional, Callable
 from ..core.models import FileItem
-from ..models import ModelRegistry, get_model_registry
+from ..core.system_resources import get_system_resources, estimate_model_ram_usage
+from ..models import ModelRegistry, get_model_registry, ModelManager, get_model_manager
 from .client import AIClient, create_ai_client
 from ..config import get_config
 

@@ -17,6 +17,8 @@ class ModelInfo:
     is_available: bool = False
     size_mb: Optional[float] = None
     local_path: Optional[str] = None
+    ram_required_gb: Optional[float] = None  # Estimated RAM requirement in GB
+    requires_gpu: bool = False  # Whether model requires GPU
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -65,45 +67,51 @@ class ModelRegistry:
     def _get_default_models(self) -> Dict[str, ModelInfo]:
         """Get default model registry."""
         return {
-            # Vision models
+            # Vision models (online - minimal RAM)
             "gpt-4o-vision": ModelInfo(
                 name="gpt-4o-vision",
                 type="vision",
                 provider="openai",
                 capabilities=["image_analysis", "ocr", "object_detection", "image_description"],
-                file_types=["image/jpeg", "image/png", "image/gif", "image/webp"]
+                file_types=["image/jpeg", "image/png", "image/gif", "image/webp"],
+                ram_required_gb=0.1  # API only, minimal overhead
             ),
             "claude-3-5-sonnet-vision": ModelInfo(
                 name="claude-3-5-sonnet-vision",
                 type="vision",
                 provider="anthropic",
                 capabilities=["image_analysis", "ocr", "document_understanding"],
-                file_types=["image/jpeg", "image/png", "image/gif", "image/webp"]
+                file_types=["image/jpeg", "image/png", "image/gif", "image/webp"],
+                ram_required_gb=0.1  # API only, minimal overhead
             ),
             
-            # Document analysis
+            # Document analysis (online - minimal RAM)
             "gpt-4o": ModelInfo(
                 name="gpt-4o",
                 type="nlp",
                 provider="openai",
                 capabilities=["text_analysis", "document_understanding", "code_analysis"],
-                file_types=["text/plain", "application/pdf", "text/markdown", "text/x-script.python"]
+                file_types=["text/plain", "application/pdf", "text/markdown", "text/x-script.python"],
+                ram_required_gb=0.1  # API only, minimal overhead
             ),
             "claude-3-5-sonnet": ModelInfo(
                 name="claude-3-5-sonnet",
                 type="nlp",
                 provider="anthropic",
                 capabilities=["text_analysis", "document_understanding", "code_analysis"],
-                file_types=["text/plain", "application/pdf", "text/markdown", "text/x-script.python"]
+                file_types=["text/plain", "application/pdf", "text/markdown", "text/x-script.python"],
+                ram_required_gb=0.1  # API only, minimal overhead
             ),
             
-            # Local models
+            # Local models (require significant RAM)
             "llama3.2-vision": ModelInfo(
                 name="llama3.2-vision",
                 type="vision",
                 provider="ollama",
-                capabilities=["image_analysis", "object_detection"],
-                file_types=["image/jpeg", "image/png"],
+                capabilities=["image_analysis", "ocr"],
+                file_types=["image/jpeg", "image/png", "image/gif"],
+                size_mb=7300,
+                ram_required_gb=12.0,  # 7.3GB model + ~4-5GB overhead
                 is_available=False
             ),
             "llama3.2": ModelInfo(
@@ -112,8 +120,30 @@ class ModelRegistry:
                 provider="ollama",
                 capabilities=["text_analysis", "code_analysis"],
                 file_types=["text/plain", "text/markdown", "text/x-script.python"],
+                size_mb=2000,
+                ram_required_gb=4.5,  # 2GB model + ~2-2.5GB overhead
                 is_available=False
             ),
+            "codellama": ModelInfo(
+                name="codellama",
+                type="code",
+                provider="ollama",
+                capabilities=["code_analysis", "code_generation"],
+                file_types=["text/x-script.python", "text/x-script.javascript", "text/x-c"],
+                size_mb=3800,
+                ram_required_gb=7.0,  # 3.8GB model + ~3GB overhead
+                is_available=False
+            ),
+            "llama3.2:1b": ModelInfo(
+                name="llama3.2:1b",
+                type="nlp",
+                provider="ollama",
+                capabilities=["text_analysis"],
+                file_types=["text/plain", "text/markdown"],
+                size_mb=1300,
+                ram_required_gb=3.0,  # Smaller model for limited systems
+                is_available=False
+            )
         }
     
     def save(self) -> None:
@@ -127,6 +157,36 @@ class ModelRegistry:
         
         with open(self.registry_path, 'w') as f:
             json.dump(data, f, indent=2)
+    
+    def filter_by_resources(self, available_ram_gb: float,
+                           require_gpu: bool = False) -> List[ModelInfo]:
+        """
+        Filter models that can run with given resources.
+        
+        Args:
+            available_ram_gb: Available RAM in GB
+            require_gpu: Whether to filter for GPU models only
+            
+        Returns:
+            List of models that can run with given resources
+        """
+        suitable_models = []
+        for model in self.models.values():
+            # Check RAM requirement
+            if model.ram_required_gb and model.ram_required_gb > available_ram_gb:
+                continue
+            
+            # Check GPU requirement
+            if require_gpu and not model.requires_gpu:
+                continue
+            
+            suitable_models.append(model)
+        
+        return suitable_models
+    
+    def get_models_by_provider(self, provider: str) -> List[ModelInfo]:
+        """Get all models from a specific provider."""
+        return [m for m in self.models.values() if m.provider == provider]
     
     def get_model(self, name: str) -> Optional[ModelInfo]:
         """Get model info by name."""

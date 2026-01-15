@@ -25,6 +25,8 @@ An AI-powered file system organizing tool that analyzes and organizes files base
 - **Explicit mappings** - Manually configure which models to use for specific file types
 - **Model registry** - Tracks available models and their capabilities
 - **Auto-download** - Optionally download required local models automatically
+- **Resource-aware** - Automatically detects system RAM/CPU/GPU and filters suitable models
+- **Dynamic loading** - Load and unload models on-demand to optimize memory usage (NEW!)
 
 ## Project Structure
 
@@ -479,7 +481,9 @@ Configure which analysis models to use:
 
 ## Documentation
 
-- [PHASE3_COMPLETE.md](PHASE3_COMPLETE.md) - **NEW!** AI model recommendation system guide
+- [DYNAMIC_LOADING.md](DYNAMIC_LOADING.md) - **NEW!** Dynamic model loading and memory management
+- [RESOURCE_AWARE.md](RESOURCE_AWARE.md) - Resource-aware model selection guide
+- [PHASE3_COMPLETE.md](PHASE3_COMPLETE.md) - AI model recommendation system guide
 - [AI_PROPOSAL.md](docs/AI_PROPOSAL.md) - Detailed guide for AI structure proposal
 - [OVERVIEW.md](OVERVIEW.md) - Technical architecture and design
 - [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - File organization reference
