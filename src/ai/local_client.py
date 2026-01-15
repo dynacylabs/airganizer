@@ -32,16 +32,14 @@ class OllamaClient(AIClient):
     def generate(self, prompt: str, system_prompt: Optional[str] = None,
                  temperature: float = 0.7, max_tokens: int = 4000) -> str:
         """Generate a response using Ollama."""
-        messages = []
-        
+        # Combine system prompt and user prompt for /api/generate endpoint
+        full_prompt = prompt
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        
-        messages.append({"role": "user", "content": prompt})
+            full_prompt = f"{system_prompt}\n\n{prompt}"
         
         data = {
             "model": self.model,
-            "messages": messages,
+            "prompt": full_prompt,
             "stream": False,
             "options": {
                 "temperature": temperature,
@@ -50,7 +48,7 @@ class OllamaClient(AIClient):
         }
         
         response = requests.post(
-            f"{self.host}/api/chat",
+            f"{self.host}/api/generate",
             json=data,
             timeout=120
         )
@@ -58,7 +56,7 @@ class OllamaClient(AIClient):
         response.raise_for_status()
         result = response.json()
         
-        return result['message']['content']
+        return result['response']
     
     def list_models(self) -> List[str]:
         """List available models in Ollama."""
