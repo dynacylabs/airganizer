@@ -122,41 +122,63 @@ def check_dependencies():
     return missing
 
 
+def get_imagemagick_command():
+    """Find ImageMagick command on the system."""
+    # Check standard commands first (v7 then v6)
+    if shutil.which('magick'):
+        return ['magick']
+    if shutil.which('convert'):
+        return ['convert']
+    
+    # Check Homebrew paths on macOS
+    homebrew_paths = [
+        '/opt/homebrew/bin/magick',  # Apple Silicon
+        '/opt/homebrew/bin/convert',
+        '/usr/local/bin/magick',  # Intel Mac
+        '/usr/local/bin/convert'
+    ]
+    
+    for path in homebrew_paths:
+        if os.path.exists(path):
+            return [path]
+    
+    return None
+
+
 def convert_image_to_jpeg(input_path, output_path):
     """Convert image to JPEG using ImageMagick."""
-    # Try magick command first (ImageMagick v7), fall back to convert (v6)
-    commands = [['magick', input_path, '-quality', '95', output_path],
-                ['convert', input_path, '-quality', '95', output_path]]
+    # Get ImageMagick command
+    base_cmd = get_imagemagick_command()
     
-    for cmd in commands:
-        try:
-            result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return True
-        except subprocess.CalledProcessError as e:
-            # Check if it's a real image error or just wrong command
-            if 'improper image header' in e.stderr or 'corrupt image' in e.stderr:
-                logging.error(f"Image file is corrupted or not a valid image: {input_path}")
-                return False
-            # Try next command
-            continue
-        except subprocess.TimeoutExpired:
-            logging.error(f"Image conversion timeout for {input_path}")
-            return False
-        except FileNotFoundError:
-            # Try next command
-            continue
-        except Exception as e:
-            logging.error(f"Image conversion error for {input_path}: {e}")
-            return False
+    if not base_cmd:
+        logging.error(f"ImageMagick not found. Install with: brew install imagemagick")
+        return False
     
-    logging.error(f"ImageMagick not found. Install ImageMagick.")
-    return False
+    # Build full command
+    cmd = base_cmd + [input_path, '-quality', '95', output_path]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        # Check if it's a real image error
+        if 'improper image header' in e.stderr or 'corrupt image' in e.stderr:
+            logging.error(f"Image file is corrupted or not a valid image: {input_path}")
+        else:
+            logging.error(f"Image conversion failed for {input_path}: {e.stderr}")
+        return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Image conversion timeout for {input_path}")
+        return False
+    except Exception as e:
+        logging.error(f"Image conversion error for {input_path}: {e}")
+        return False
 
 
 def get_libreoffice_command():
