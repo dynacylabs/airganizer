@@ -30,44 +30,60 @@ def create_initial_prompt(files: List[FileItem], chunk_number: int = 1,
     Returns:
         Formatted prompt string
     """
-    file_list = "\n".join([f"- {f.to_simple_string()}" for f in files])
+    file_list = "\n".join([f"- {f.to_simple_string()}" for f in files[:50]])  # Limit to first 50 for brevity
+    if len(files) > 50:
+        file_list += f"\n... and {len(files) - 50} more files"
     
-    prompt = f"""Please analyze these files and propose an initial organizational directory structure.
+    prompt = f"""Analyze these files and create an organizational directory structure.
 
-Chunk {chunk_number} of {total_chunks}
-
-Files to analyze:
+Files (chunk {chunk_number}/{total_chunks}):
 {file_list}
 
-Respond with a JSON structure in this format:
+You MUST respond with EXACTLY this JSON structure format:
+
 {{
   "root": {{
     "name": "organized",
-    "description": "Root directory for organized files",
+    "description": "Root directory for all organized files",
     "path": "/organized",
     "subdirectories": [
       {{
-        "name": "category_name",
-        "description": "Clear description of what goes here",
-        "path": "/organized/category_name",
+        "name": "Documents",
+        "description": "Text documents and PDFs",
+        "path": "/organized/Documents",
         "subdirectories": [],
         "files": [],
-        "rationale": "Why this category makes sense"
+        "rationale": "Group all document-type files together"
+      }},
+      {{
+        "name": "Media",
+        "description": "Images, videos, and audio files",
+        "path": "/organized/Media",
+        "subdirectories": [
+          {{
+            "name": "Images",
+            "description": "All image files",
+            "path": "/organized/Media/Images",
+            "subdirectories": [],
+            "files": [],
+            "rationale": "Separate images from other media"
+          }}
+        ],
+        "files": [],
+        "rationale": "Central location for all media files"
       }}
     ],
     "files": [],
-    "rationale": "Overall organizational strategy"
+    "rationale": "Organize by file type and purpose"
   }}
 }}
 
-Requirements:
-1. Create logical categories based on file types and purposes
-2. You don't need to assign files to directories yet (leave "files" arrays empty)
-3. Focus on creating a sensible structure that can accommodate the files you've seen
-4. Be flexible - this structure will evolve as more files are processed
-5. Include a "rationale" explaining your organizational logic
-
-IMPORTANT: Respond with ONLY the JSON structure shown above. No explanatory text. No markdown. Just the JSON object starting with {{ and ending with }}."""
+CRITICAL REQUIREMENTS:
+- Every directory object MUST have: name, description, path, subdirectories (array), files (array), rationale
+- Keep files arrays empty for now
+- Create categories based on the file types you see (images, PDFs, videos, documents, etc.)
+- Use simple, clear category names
+- Return ONLY the JSON above, nothing else"""
 
     return prompt
 
