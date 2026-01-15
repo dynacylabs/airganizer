@@ -111,10 +111,11 @@ class StructureProposer:
         try:
             structure = ProposedStructure.from_json(json_str)
             return structure
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, KeyError) as e:
             # Create a fallback structure if AI response is invalid
-            print(f"Warning: Failed to parse AI response: {e}")
-            print(f"Response was: {json_str[:500]}...")
+            print(f"\n⚠️  Warning: Failed to parse AI response: {e}")
+            print(f"   Response was: {json_str[:500]}...")
+            print(f"   Creating fallback structure...")
             return self._create_fallback_structure()
     
     def _process_update_chunk(self, files: List[FileItem],
@@ -137,9 +138,11 @@ class StructureProposer:
             structure = ProposedStructure.from_json(json_str)
             structure.update_timestamp()
             return structure
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse AI response: {e}")
-            print(f"Keeping previous structure...")
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"\n⚠️  Warning: Failed to parse AI response: {e}")
+            print(f"   Raw response preview: {response[:200]}...")
+            print(f"   Extracted JSON preview: {json_str[:200]}...")
+            print(f"   Keeping previous structure and continuing...")
             return current_structure
     
     def _create_fallback_structure(self) -> ProposedStructure:
