@@ -47,10 +47,11 @@ echo -e "${GREEN}═════════════════════
 echo "Directory: $DIR"
 echo "Output: $OUTPUT_DIR/metadata.json"
 echo ""
+echo -e "${YELLOW}Note: Including binwalk analysis (slower but more detailed)${NC}"
+echo ""
 
 python -m src.main scan "$DIR" \
   -o "$OUTPUT_DIR/metadata.json" \
-  --no-binwalk \
   -v
 
 echo -e "${GREEN}✅ Phase 1 complete!${NC}"
