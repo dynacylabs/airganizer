@@ -124,35 +124,92 @@ def check_dependencies():
 
 def convert_image_to_jpeg(input_path, output_path):
     """Convert image to JPEG using ImageMagick."""
-    try:
-        subprocess.run(
-            ['convert', input_path, '-quality', '95', output_path],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Image conversion failed: {e.stderr}")
-        return False
+    # Try magick command first (ImageMagick v7), fall back to convert (v6)
+    commands = [['magick', input_path, '-quality', '95', output_path],
+                ['convert', input_path, '-quality', '95', output_path]]
+    
+    for cmd in commands:
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            # Check if it's a real image error or just wrong command
+            if 'improper image header' in e.stderr or 'corrupt image' in e.stderr:
+                logging.error(f"Image file is corrupted or not a valid image: {input_path}")
+                return False
+            # Try next command
+            continue
+        except subprocess.TimeoutExpired:
+            logging.error(f"Image conversion timeout for {input_path}")
+            return False
+        except FileNotFoundError:
+            # Try next command
+            continue
+        except Exception as e:
+            logging.error(f"Image conversion error for {input_path}: {e}")
+            return False
+    
+    logging.error(f"ImageMagick not found. Install ImageMagick.")
+    return False
+
+
+def get_libreoffice_command():
+    """Find LibreOffice command on the system."""
+    # Check standard commands first
+    if shutil.which('libreoffice'):
+        return 'libreoffice'
+    if shutil.which('soffice'):
+        return 'soffice'
+    
+    # Check macOS application bundle
+    macos_paths = [
+        '/Applications/LibreOffice.app/Contents/MacOS/soffice',
+        '/Applications/LibreOffice.app/Contents/MacOS/libreoffice',
+        os.path.expanduser('~/Applications/LibreOffice.app/Contents/MacOS/soffice')
+    ]
+    
+    for path in macos_paths:
+        if os.path.exists(path):
+            return path
+    
+    return None
 
 
 def convert_document_to_pdf(input_path, output_dir):
     """Convert document to PDF using LibreOffice."""
+    # Get LibreOffice command
+    libreoffice_cmd = get_libreoffice_command()
+    
+    if not libreoffice_cmd:
+        logging.debug(f"LibreOffice not found, skipping {input_path}")
+        return False
+    
     try:
-        subprocess.run(
-            ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path],
+        result = subprocess.run(
+            [libreoffice_cmd, '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path],
             check=True,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=120
         )
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"Document conversion failed: {e.stderr}")
+        logging.error(f"Document conversion failed for {input_path}: {e.stderr}")
         return False
     except subprocess.TimeoutExpired:
-        logging.error(f"Document conversion timed out")
+        logging.error(f"Document conversion timed out for {input_path}")
+        return False
+    except FileNotFoundError:
+        logging.error(f"LibreOffice command not executable: {libreoffice_cmd}")
+        return False
+    except Exception as e:
+        logging.error(f"Document conversion error for {input_path}: {e}")
         return False
 
 
@@ -180,31 +237,51 @@ def convert_text_to_pdf(input_path, output_path):
 def convert_audio_to_mp3(input_path, output_path):
     """Convert audio to MP3 using ffmpeg."""
     try:
-        subprocess.run(
+        result = subprocess.run(
             ['ffmpeg', '-i', input_path, '-codec:a', 'libmp3lame', '-qscale:a', '2', output_path, '-y'],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            timeout=300
         )
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"Audio conversion failed: {e.stderr}")
+        logging.error(f"Audio conversion failed for {input_path}: {e.stderr}")
+        return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Audio conversion timeout for {input_path}")
+        return False
+    except FileNotFoundError:
+        logging.error(f"ffmpeg not found. Install ffmpeg.")
+        return False
+    except Exception as e:
+        logging.error(f"Audio conversion error for {input_path}: {e}")
         return False
 
 
 def convert_video_to_mp4(input_path, output_path):
     """Convert video to MP4 using ffmpeg."""
     try:
-        subprocess.run(
+        result = subprocess.run(
             ['ffmpeg', '-i', input_path, '-codec:v', 'libx264', '-codec:a', 'aac', 
              '-strict', 'experimental', '-b:a', '192k', output_path, '-y'],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            timeout=600
         )
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"Video conversion failed: {e.stderr}")
+        logging.error(f"Video conversion failed for {input_path}: {e.stderr}")
+        return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Video conversion timeout for {input_path}")
+        return False
+    except FileNotFoundError:
+        logging.error(f"ffmpeg not found. Install ffmpeg.")
+        return False
+    except Exception as e:
+        logging.error(f"Video conversion error for {input_path}: {e}")
         return False
 
 
@@ -257,7 +334,7 @@ def scan_and_convert(directory, unconvertible_log, dry_run=False):
     """Scan directory and convert files to standard formats in place."""
     mime = magic.Magic(mime=True)
     
-    # System directories to skip
+    # System directories and patterns to skip
     SKIP_DIRS = {
         '.fseventsd',
         '.Spotlight-V100',
@@ -267,8 +344,17 @@ def scan_and_convert(directory, unconvertible_log, dry_run=False):
         '__pycache__',
         'node_modules',
         '.git',
-        '.svn'
+        '.svn',
+        'AppData'  # Windows user data - often contains fake file extensions
     }
+    
+    # File patterns to skip (Windows registry transaction files disguised as images)
+    SKIP_PATTERNS = [
+        'UsrClass.dat',
+        '.TMContainer',
+        '.TM.tga',
+        '.regtrans-ms'
+    ]
     
     stats = {
         'total': 0,
@@ -285,6 +371,9 @@ def scan_and_convert(directory, unconvertible_log, dry_run=False):
     for root, dirs, files in os.walk(directory):
         # Skip system directories
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        
+        # Skip files matching system file patterns
+        files = [f for f in files if not any(pattern in f for pattern in SKIP_PATTERNS)]
         for file in files:
             file_path = os.path.join(root, file)
             stats['total'] += 1
