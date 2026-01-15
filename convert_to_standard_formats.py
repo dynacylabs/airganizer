@@ -259,11 +259,27 @@ def convert_text_to_pdf(input_path, output_path):
 def convert_audio_to_mp3(input_path, output_path):
     """Convert audio to MP3 using ffmpeg."""
     try:
+        # First probe the file to check for DRM
+        probe_result = subprocess.run(
+            ['ffmpeg', '-i', str(input_path)],
+            capture_output=True,
+            text=True,
+            errors='replace',
+            timeout=30
+        )
+        
+        # Check for DRM-protected content
+        probe_output = probe_result.stderr.lower()
+        if 'drms' in probe_output or 'drmi' in probe_output:
+            logging.error(f"DRM-protected audio cannot be converted: {input_path}")
+            return False
+        
         result = subprocess.run(
             ['ffmpeg', '-i', input_path, '-codec:a', 'libmp3lame', '-qscale:a', '2', output_path, '-y'],
             check=True,
             capture_output=True,
             text=True,
+            errors='replace',
             timeout=300
         )
         return True
@@ -284,12 +300,28 @@ def convert_audio_to_mp3(input_path, output_path):
 def convert_video_to_mp4(input_path, output_path):
     """Convert video to MP4 using ffmpeg."""
     try:
+        # First probe the file to check for DRM
+        probe_result = subprocess.run(
+            ['ffmpeg', '-i', str(input_path)],
+            capture_output=True,
+            text=True,
+            errors='replace',
+            timeout=30
+        )
+        
+        # Check for DRM-protected content (iTunes, Amazon, etc.)
+        probe_output = probe_result.stderr.lower()
+        if 'drms' in probe_output or 'drmi' in probe_output:
+            logging.error(f"DRM-protected video cannot be converted: {input_path}")
+            return False
+        
         result = subprocess.run(
             ['ffmpeg', '-i', input_path, '-codec:v', 'libx264', '-codec:a', 'aac', 
              '-strict', 'experimental', '-b:a', '192k', output_path, '-y'],
             check=True,
             capture_output=True,
             text=True,
+            errors='replace',
             timeout=600
         )
         return True
@@ -367,7 +399,10 @@ def scan_and_convert(directory, unconvertible_log, dry_run=False):
         'node_modules',
         '.git',
         '.svn',
-        'AppData'  # Windows user data - often contains fake file extensions
+        'AppData',  # Windows user data - often contains fake file extensions
+        '.AndroidStudio',
+        '.AndroidStudio1.5',
+        '.android'  # Android SDK directories with fake TGA files
     }
     
     # File patterns to skip (Windows registry transaction files disguised as images)
