@@ -208,8 +208,8 @@ def convert_video_to_mp4(input_path, output_path):
         return False
 
 
-def convert_file(file_path, mime_type, output_dir, delete_original=False):
-    """Convert a file to its target standard format."""
+def convert_file(file_path, mime_type):
+    """Convert a file to its target standard format in place."""
     target_format = CONVERSION_MAP.get(mime_type)
     
     if not target_format:
@@ -218,42 +218,43 @@ def convert_file(file_path, mime_type, output_dir, delete_original=False):
     if target_format == 'already_standard':
         return None, "already_standard"
     
-    # Create output filename
+    # Create output filename in the same directory
+    file_dir = os.path.dirname(file_path)
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     
     if target_format == 'jpeg':
-        output_path = os.path.join(output_dir, f"{base_name}.jpg")
+        output_path = os.path.join(file_dir, f"{base_name}.jpg")
         success = convert_image_to_jpeg(file_path, output_path)
     elif target_format == 'pdf':
         if mime_type in ['text/html', 'text/xml', 'text/plain']:
-            output_path = os.path.join(output_dir, f"{base_name}.pdf")
+            output_path = os.path.join(file_dir, f"{base_name}.pdf")
             success = convert_text_to_pdf(file_path, output_path)
         else:
-            output_path = os.path.join(output_dir, f"{base_name}.pdf")
-            success = convert_document_to_pdf(file_path, output_dir)
+            output_path = os.path.join(file_dir, f"{base_name}.pdf")
+            success = convert_document_to_pdf(file_path, file_dir)
     elif target_format == 'mp3':
-        output_path = os.path.join(output_dir, f"{base_name}.mp3")
+        output_path = os.path.join(file_dir, f"{base_name}.mp3")
         success = convert_audio_to_mp3(file_path, output_path)
     elif target_format == 'mp4':
-        output_path = os.path.join(output_dir, f"{base_name}.mp4")
+        output_path = os.path.join(file_dir, f"{base_name}.mp4")
         success = convert_video_to_mp4(file_path, output_path)
     else:
         return None, f"unknown_target_format: {target_format}"
     
     if success:
-        if delete_original:
-            try:
-                os.remove(file_path)
-                logging.info(f"Deleted original: {file_path}")
-            except Exception as e:
-                logging.warning(f"Could not delete original {file_path}: {e}")
+        # Delete the original file after successful conversion
+        try:
+            os.remove(file_path)
+            logging.info(f"Converted and replaced: {file_path} -> {output_path}")
+        except Exception as e:
+            logging.warning(f"Could not delete original {file_path}: {e}")
         return output_path, "converted"
     else:
         return None, "conversion_failed"
 
 
-def scan_and_convert(directory, output_dir, unconvertible_log, dry_run=False, delete_original=False):
-    """Scan directory and convert files to standard formats."""
+def scan_and_convert(directory, unconvertible_log, dry_run=False):
+    """Scan directory and convert files to standard formats in place."""
     mime = magic.Magic(mime=True)
     
     stats = {
@@ -294,15 +295,9 @@ def scan_and_convert(directory, output_dir, unconvertible_log, dry_run=False, de
                             logging.info(f"[DRY RUN] Would convert: {file_path} ({mime_type}) -> {target.upper()}")
                             stats['converted'] += 1
                         else:
-                            # Create relative output directory structure
-                            rel_path = os.path.relpath(root, directory)
-                            target_dir = os.path.join(output_dir, rel_path)
-                            os.makedirs(target_dir, exist_ok=True)
-                            
-                            output_path, status = convert_file(file_path, mime_type, target_dir, delete_original)
+                            output_path, status = convert_file(file_path, mime_type)
                             
                             if status == "converted":
-                                logging.info(f"Converted: {file_path} -> {output_path}")
                                 stats['converted'] += 1
                             elif status == "conversion_failed":
                                 logging.error(f"Conversion failed: {file_path}")
@@ -336,18 +331,15 @@ def scan_and_convert(directory, output_dir, unconvertible_log, dry_run=False, de
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert files to standard formats (PDF, MP3, JPEG, MP4) based on mime type.",
+        description="Convert files to standard formats (PDF, MP3, JPEG, MP4) in place based on mime type.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Dry run to see what would be converted
-  python convert_to_standard_formats.py /path/to/files --output /path/to/output --dry-run
+  python convert_to_standard_formats.py /path/to/files --dry-run
 
-  # Actually convert files
-  python convert_to_standard_formats.py /path/to/files --output /path/to/output
-
-  # Convert and delete original files
-  python convert_to_standard_formats.py /path/to/files --output /path/to/output --delete-original
+  # Actually convert files in place (replaces original files)
+  python convert_to_standard_formats.py /path/to/files
         """
     )
     
@@ -355,12 +347,6 @@ Examples:
         "directory",
         type=str,
         help="Directory to scan for files to convert"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        required=True,
-        help="Output directory for converted files"
     )
     parser.add_argument(
         "--unconvertible-log",
@@ -372,11 +358,6 @@ Examples:
         "--dry-run",
         action="store_true",
         help="Preview what would be converted without actually converting"
-    )
-    parser.add_argument(
-        "--delete-original",
-        action="store_true",
-        help="Delete original files after successful conversion"
     )
     
     args = parser.parse_args()
@@ -401,22 +382,17 @@ Examples:
             logging.warning(f"Missing dependencies: {', '.join(missing_deps)}")
             logging.warning("Some conversions may fail. Install missing tools for full functionality.")
     
-    # Create output directory
-    os.makedirs(args.output, exist_ok=True)
-    
-    logging.info(f"{'[DRY RUN] ' if args.dry_run else ''}Starting conversion scan...")
-    logging.info(f"Input directory: {args.directory}")
-    logging.info(f"Output directory: {args.output}")
+    logging.info(f"{'[DRY RUN] ' if args.dry_run else ''}Starting in-place conversion scan...")
+    logging.info(f"Directory: {args.directory}")
     logging.info(f"Unconvertible log: {args.unconvertible_log}")
+    logging.info("WARNING: Original files will be replaced with converted versions!")
     logging.info("=" * 80)
     
     # Scan and convert
     stats, unconvertible_files = scan_and_convert(
         args.directory,
-        args.output,
         args.unconvertible_log,
-        args.dry_run,
-        args.delete_original
+        args.dry_run
     )
     
     # Print summary
