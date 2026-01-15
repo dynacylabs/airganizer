@@ -126,7 +126,7 @@ def main():
         '--provider',
         type=str,
         default='openai',
-        choices=['openai', 'anthropic', 'claude'],
+        choices=['openai', 'anthropic', 'claude', 'ollama'],
         help='AI provider to use (default: openai)'
     )
     propose_parser.add_argument(
