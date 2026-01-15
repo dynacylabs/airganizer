@@ -257,18 +257,34 @@ def scan_and_convert(directory, unconvertible_log, dry_run=False):
     """Scan directory and convert files to standard formats in place."""
     mime = magic.Magic(mime=True)
     
+    # System directories to skip
+    SKIP_DIRS = {
+        '.fseventsd',
+        '.Spotlight-V100',
+        '.Trashes',
+        '.TemporaryItems',
+        '.DocumentRevisions-V100',
+        '__pycache__',
+        'node_modules',
+        '.git',
+        '.svn'
+    }
+    
     stats = {
         'total': 0,
         'already_standard': 0,
         'converted': 0,
         'conversion_failed': 0,
         'unconvertible': 0,
-        'errors': 0
+        'errors': 0,
+        'skipped_system': 0
     }
     
     unconvertible_files = []
     
     for root, dirs, files in os.walk(directory):
+        # Skip system directories
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for file in files:
             file_path = os.path.join(root, file)
             stats['total'] += 1
