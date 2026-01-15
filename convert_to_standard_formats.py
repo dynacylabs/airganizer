@@ -30,6 +30,7 @@ CONVERSION_MAP = {
     'image/svg+xml': 'jpeg',  # Rasterize SVG to JPEG
     'image/vnd.microsoft.icon': 'jpeg',
     'image/x-xcf': 'jpeg',  # GIMP format
+    'image/g3fax': 'jpeg',  # Fax images
     
     # Documents -> PDF
     'application/pdf': 'already_standard',  # Already PDF
@@ -73,7 +74,7 @@ UNCONVERTIBLE_TYPES = [
     'application/gzip',
     'application/octet-stream',
     'application/onenote',
-    'application/vnd.ms-office',
+    'application/vnd.ms-office',  # Legacy Office format
     'error/unknown',
     'message/rfc822',  # Email files
     'text/x-c',
@@ -83,14 +84,13 @@ UNCONVERTIBLE_TYPES = [
     'application/vnd.sqlite3',
     'application/x-appleworks3',
     'application/x-dbt',
-    'application/vnd.hp-HPGL',
+    'application/vnd.hp-HPGL',  # CAD plotting files
     'audio/midi',
-    'audio/x-syx',
-    'image/x-atari-degas',
-    'image/x-award-bioslogo',
-    'image/g3fax',
+    'audio/x-syx',  # MIDI SysEx
+    'image/x-atari-degas',  # Old Atari format
+    'image/x-award-bioslogo',  # BIOS logos
     'image/vnd.dwg',  # CAD files
-    'application/x-matlab-data',
+    'application/x-matlab-data',  # MATLAB proprietary
 ]
 
 
