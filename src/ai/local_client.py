@@ -30,8 +30,9 @@ class OllamaClient(AIClient):
             
             # Determine which model to use
             if model is None:
-                # Default preference: llama3.2:3b (small, fast, capable)
-                model = 'llama3.2:3b'
+                # Default preference: mistral:7b or qwen2.5:7b (better at structured output)
+                # llama3.2:3b is faster but struggles with JSON formatting
+                model = 'mistral:7b'
             
             # Check if model is available
             if model not in available_models:

@@ -14,7 +14,7 @@ Guidelines:
 5. Provide rationale for organizational decisions
 6. Update the structure iteratively as you see more files
 
-You must respond with valid JSON only, no additional text."""
+CRITICAL: You must respond with ONLY valid JSON. No explanatory text before or after. No markdown code blocks. Just pure JSON starting with { and ending with }."""
 
 
 def create_initial_prompt(files: List[FileItem], chunk_number: int = 1, 
@@ -67,7 +67,7 @@ Requirements:
 4. Be flexible - this structure will evolve as more files are processed
 5. Include a "rationale" explaining your organizational logic
 
-Respond with ONLY the JSON structure, no additional text."""
+IMPORTANT: Respond with ONLY the JSON structure shown above. No explanatory text. No markdown. Just the JSON object starting with {{ and ending with }}."""
 
     return prompt
 
