@@ -1,0 +1,58 @@
+# Airganizer Configuration File
+# AI-powered file sorting utility
+
+# Cache and temporary files
+cache:
+  # Directory for cache and temporary files (for resumability)
+  directory: ".airganizer_cache"
+
+# Stage 1: File Enumeration Configuration
+source:
+  # Directory to scan for files (will be scanned recursively)
+  directory: "/path/to/source"
+  
+  # File patterns to include (glob patterns)
+  include:
+    - "*"
+  
+  # File patterns to exclude (glob patterns)
+  exclude:
+    - ".*"  # Hidden files
+    - "__pycache__"
+    - "*.tmp"
+    - "node_modules"
+
+destination:
+  # Output directory where files will be organized
+  directory: "/path/to/destination"
+
+# Metadata extraction settings
+metadata:
+  # Extract EXIF data from images
+  extract_exif: true
+  
+  # Extract audio metadata
+  extract_audio_metadata: true
+  
+  # Extract video metadata
+  extract_video_metadata: true
+  
+  # Extract document metadata (PDF, Office files)
+  extract_document_metadata: true
+
+# Stage 1 output
+stage1:
+  # Output file for metadata (JSON format)
+  output_file: "file_metadata.json"
+  
+  # Include file content hash (MD5)
+  calculate_hash: false
+  
+  # Maximum file size to process (in MB, 0 = no limit)
+  max_file_size: 0
+  
+  # Cache progress every N files (for resumability)
+  cache_interval: 100
+  
+  # Resume from cache if available
+  resume_from_cache: true

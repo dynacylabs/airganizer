@@ -30,11 +30,15 @@ ENV/
 .idea/
 *.swp
 *.swo
-
-# Data
-data/*.json
-data/*.db
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Project specific
+file_metadata.json
+*.json.bak
+test_files/
+.airganizer_cache/
+*.pkl
