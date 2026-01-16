@@ -70,9 +70,18 @@ Additional metadata by file type:
 
 Edit `config.yaml` to customize the behavior:
 
+### Global Settings
+- `global.dry_run`: Run in dry run mode (default: `true`)
+  - **true**: Build a plan without moving/modifying files - each stage updates the plan
+  - **false**: Execute the plan (only use in final stage when ready to move files)
+  - In dry run mode, operations are recorded in the plan file for review
+
 ### Cache Configuration
 - `cache.directory`: Directory for cache and temporary files (default: `.airganizer_cache`)
   - Used to store progress for resumability if the process is interrupted
+  - All generated files (output, cache) are placed here by default
+- `cache.error_files_directory`: Directory for files that had processing errors (default: `.airganizer_cache/error_files`)
+  - Files that cause errors are automatically moved here and excluded from further processing
 
 ### Source Configuration
 - `source.directory`: Directory to scan
@@ -89,7 +98,12 @@ Edit `config.yaml` to customize the behavior:
 - `metadata.extract_document_metadata`: Extract document metadata (default: `true`)
 
 ### Stage 1 Options
-- `stage1.output_file`: Output JSON file name (default: `file_metadata.json`)
+- `stage1.output_file`: Output JSON file name (default: `stage1_metadata.json`)
+  - Relative paths are placed in the cache directory
+  - Use absolute paths to place output elsewhere
+- `stage1.plan_file`: Plan file for file operations (default: `airganizer_plan.json`)
+  - Tracks all planned file moves, renames, and operations
+  - Updated by each stage, executed in final stage
 - `stage1.calculate_hash`: Calculate MD5 hash for each file (default: `false`)
 - `stage1.max_file_size`: Maximum file size to process in MB, 0 = no limit (default: `0`)
 - `stage1.cache_interval`: Save progress every N files (default: `100`)
@@ -168,6 +182,42 @@ Stage 1 automatically saves progress to a cache file (in `.airganizer_cache/` by
    - Set `stage1.resume_from_cache: false` to start fresh (ignoring cache)
 3. **Cache Cleanup**: The cache is automatically deleted after successful completion
 
+### Error Handling
+
+If Stage 1 encounters an error processing a file:
+
+**In Dry Run Mode (default):**
+1. **Recorded in Plan**: The problematic file and error are recorded in the plan file
+2. **No Files Moved**: The original file remains in place
+3. **Available for Review**: You can review all errors in the plan file before execution
+4. **Processing Continues**: The error doesn't stop the entire process
+
+**In Real Mode (dry_run: false):**
+1. **File is Moved**: The problematic file is automatically moved to the error files directory
+2. **Directory Structure Preserved**: The relative path from the source directory is preserved
+3. **Error Log Created**: An `.error.txt` file is created alongside the moved file with details
+4. **Excluded from Processing**: The file is marked as processed and won't be retried on resume
+5. **Processing Continues**: The error doesn't stop the entire process
+
+### The Plan File
+
+Airganizer operates by building a **plan** of operations across stages:
+
+1. **Stage 1**: Enumerates files, records errors in plan
+2. **Future Stages**: Will add categorization and organization decisions to the plan
+3. **Final Stage**: Executes the plan (set `dry_run: false`)
+
+The plan file (`airganizer_plan.json`) contains:
+- All file operations to be performed (moves, renames, etc.)
+- Reasons for each operation
+- File metadata
+- Timestamps and stage completion status
+
+**Review the plan before execution:**
+```bash
+cat .airganizer_cache/airganizer_plan.json
+```
+
 ## Dependencies
 
 ### Core
@@ -189,8 +239,12 @@ If optional dependencies are not installed, the tool will still work but skip th
 
 1. **Edit configuration**:
    ```yaml
+   global:
+     dry_run: true  # Keep true until final execution
+   
    cache:
      directory: ".airganizer_cache"
+     error_files_directory: ".airganizer_cache/error_files"
    
    source:
      directory: "/home/user/Downloads"
@@ -202,7 +256,8 @@ If optional dependencies are not installed, the tool will still work but skip th
      directory: "/home/user/OrganizedFiles"
    
    stage1:
-     output_file: "downloads_metadata.json"
+     output_file: "stage1_metadata.json"
+     plan_file: "airganizer_plan.json"
      calculate_hash: false
      cache_interval: 100
      resume_from_cache: true
@@ -224,15 +279,23 @@ If optional dependencies are not installed, the tool will still work but skip th
 
 4. **Review the output**:
    ```bash
-   cat downloads_metadata.json
+   cat .airganizer_cache/stage1_metadata.json
    ```
+
+5. **Review the plan**:
+   ```bash
+   cat .airganizer_cache/airganizer_plan.json
+   ```
+   
+   The plan shows all operations that will be performed when you execute it.
 
 ## Roadmap
 
 - ✅ **Stage 1**: File enumeration and metadata collection
+- ✅ **Dry Run Mode**: Build execution plan without moving files
 - 🔲 **Stage 2**: AI-powered file analysis and categorization
-- 🔲 **Stage 3**: File organization and moving
-- 🔲 **Stage 4**: Duplicate detection and handling
+- 🔲 **Stage 3**: Build organization strategy
+- 🔲 **Final Stage**: Execute the plan (actual file moves)
 
 ## License
 

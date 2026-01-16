@@ -31,6 +31,10 @@ class Config:
         
         return config
     
+    def is_dry_run(self) -> bool:
+        """Check if running in dry run mode (no actual file moves)"""
+        return self.config_data.get('global', {}).get('dry_run', True)
+    
     def validate(self) -> bool:
         """
         Validate configuration
@@ -65,6 +69,10 @@ class Config:
         """Get cache directory from configuration"""
         return self.config_data.get('cache', {}).get('directory', '.airganizer_cache')
     
+    def get_error_files_directory(self) -> str:
+        """Get error files directory from configuration"""
+        return self.config_data.get('cache', {}).get('error_files_directory', '.airganizer_cache/error_files')
+    
     def get_include_patterns(self) -> List[str]:
         """Get file include patterns"""
         return self.config_data.get('source', {}).get('include', ['*'])
@@ -92,6 +100,10 @@ class Config:
     def get_stage1_output_file(self) -> str:
         """Get Stage 1 output file path"""
         return self.config_data.get('stage1', {}).get('output_file', 'file_metadata.json')
+    
+    def get_plan_file(self) -> str:
+        """Get plan file path"""
+        return self.config_data.get('stage1', {}).get('plan_file', 'airganizer_plan.json')
     
     def should_calculate_hash(self) -> bool:
         """Check if file hash calculation is enabled"""

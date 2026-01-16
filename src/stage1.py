@@ -6,6 +6,7 @@ Main orchestrator for Airganizer Stage 1
 import json
 import sys
 import pickle
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Set
 from tqdm import tqdm
@@ -13,6 +14,7 @@ from tqdm import tqdm
 from .config import Config
 from .file_enumerator import FileEnumerator
 from .metadata_extractor import MetadataExtractor
+from .plan import AirganizerPlan
 
 
 class Stage1Processor:
@@ -32,6 +34,11 @@ class Stage1Processor:
         self.processed_files: Set[str] = set()  # Track processed files for resumability
         self.cache_dir = None
         self.cache_file = None
+        self.error_files_dir = None
+        self.error_count = 0
+        self.plan = None
+        self.plan_file = None
+        self.dry_run = config.is_dry_run()
     
     def initialize(self):
         """Initialize components"""
@@ -42,6 +49,17 @@ class Stage1Processor:
         self.cache_dir = Path(self.config.get_cache_directory())
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_dir / "stage1_progress.pkl"
+        
+        # Setup error files directory
+        self.error_files_dir = Path(self.config.get_error_files_directory())
+        self.error_files_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Setup plan file
+        plan_file = self.config.get_plan_file()
+        self.plan_file = self.cache_dir / plan_file if not Path(plan_file).is_absolute() else Path(plan_file)
+        
+        # Load or create plan
+        self.plan = AirganizerPlan.load_or_create(self.plan_file)
         
         # Initialize file enumerator
         self.file_enumerator = FileEnumerator(
@@ -71,6 +89,7 @@ class Stage1Processor:
             
             self.results = cache_data.get('results', [])
             self.processed_files = cache_data.get('processed_files', set())
+            self.error_count = cache_data.get('error_count', 0)
             
             print(f"Loaded cache: {len(self.results)} files already processed")
             return True
@@ -85,6 +104,7 @@ class Stage1Processor:
             cache_data = {
                 'results': self.results,
                 'processed_files': self.processed_files,
+                'error_count': self.error_count,
             }
             
             with open(self.cache_file, 'wb') as f:
@@ -101,6 +121,73 @@ class Stage1Processor:
         except Exception as e:
             print(f"Warning: Could not clear cache: {e}")
     
+    def _move_error_file(self, file_path: Path, error_message: str = None) -> bool:
+        """
+        Move a problematic file to the error files directory (or record in plan if dry_run)
+        
+        Args:
+            file_path: Path to the file that had an error
+            error_message: The error message that occurred
+        
+        Returns:
+            True if file was moved/recorded successfully
+        """
+        try:
+            # Create a subdirectory structure to preserve relative paths
+            source_dir = Path(self.config.get_source_directory())
+            relative_path = file_path.relative_to(source_dir)
+            
+            # Destination path preserves directory structure
+            dest_path = self.error_files_dir / relative_path
+            
+            # In dry run mode, just record in plan
+            if self.dry_run:
+                self.plan.add_error_file(
+                    source_path=str(file_path.absolute()),
+                    destination_path=str(dest_path.absolute()),
+                    error_message=error_message or "Unknown error",
+                    file_metadata={
+                        'relative_path': str(relative_path),
+                        'source_directory': str(source_dir.absolute())
+                    }
+                )
+                return True
+            
+            # In real mode, actually move the file
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(file_path), str(dest_path))
+            
+            # Create a detailed error log file alongside the moved file
+            error_log_path = dest_path.with_suffix(dest_path.suffix + '.error.txt')
+            with open(error_log_path, 'w') as f:
+                from datetime import datetime
+                f.write(f"=== File Processing Error ===\n")
+                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                f.write(f"\n")
+                f.write(f"Original Full Path:\n")
+                f.write(f"  {file_path.absolute()}\n")
+                f.write(f"\n")
+                f.write(f"Original Location (relative to source):\n")
+                f.write(f"  {relative_path}\n")
+                f.write(f"\n")
+                f.write(f"Source Directory:\n")
+                f.write(f"  {source_dir.absolute()}\n")
+                f.write(f"\n")
+                f.write(f"Moved To:\n")
+                f.write(f"  {dest_path.absolute()}\n")
+                f.write(f"\n")
+                if error_message:
+                    f.write(f"Error Details:\n")
+                    f.write(f"  {error_message}\n")
+                    f.write(f"\n")
+                f.write(f"=== End Error Log ===\n")
+            
+            return True
+        
+        except Exception as e:
+            print(f"Warning: Could not {'record' if self.dry_run else 'move'} error file {file_path}: {e}", file=sys.stderr)
+            return False
+    
     def process(self) -> List[Dict[str, Any]]:
         """
         Process all files and collect metadata
@@ -110,9 +197,12 @@ class Stage1Processor:
         """
         print("Stage 1: File Enumeration and Metadata Collection")
         print("=" * 60)
+        print(f"Mode: {'DRY RUN (no files will be moved)' if self.dry_run else 'REAL MODE (files will be moved)'}")
         print(f"Source directory: {self.config.get_source_directory()}")
         print(f"Destination directory: {self.config.get_destination_directory()}")
         print(f"Cache directory: {self.cache_dir.absolute()}")
+        print(f"Error files directory: {self.error_files_dir.absolute()}")
+        print(f"Plan file: {self.plan_file.absolute()}")
         print()
         
         # Try to resume from cache
@@ -139,7 +229,6 @@ class Stage1Processor:
         max_file_size = self.config.get_max_file_size()
         cache_interval = self.config.get_cache_interval()
         skipped_count = 0
-        error_count = 0
         files_since_cache = 0
         
         for file_path in tqdm(files, desc="Processing files", unit="file"):
@@ -174,13 +263,43 @@ class Stage1Processor:
                     files_since_cache = 0
             
             except Exception as e:
-                error_count += 1
-                print(f"\nError processing {file_path}: {e}", file=sys.stderr)
+                self.error_count += 1
+                error_msg = str(e)
+                
+                # Get relative path for clearer output
+                try:
+                    source_dir = Path(self.config.get_source_directory())
+                    relative_path = file_path.relative_to(source_dir)
+                    display_path = str(relative_path)
+                except:
+                    display_path = str(file_path)
+                
+                print(f"\n❌ Error processing: {display_path}", file=sys.stderr)
+                print(f"   Error: {error_msg}", file=sys.stderr)
+                
+                # Move/record the problematic file
+                action = "Recording in plan" if self.dry_run else "Moving to error files directory"
+                print(f"   {action}...", file=sys.stderr)
+                if self._move_error_file(file_path, error_msg):
+                    error_dest = self.error_files_dir / Path(display_path)
+                    status = "Recorded" if self.dry_run else "Moved"
+                    print(f"   ✓ {status}: {error_dest}", file=sys.stderr)
+                
                 self.processed_files.add(file_path_str)  # Mark as processed to avoid retrying
+                files_since_cache += 1  # Count toward cache interval
+                
+                # Save cache after error to ensure we don't retry this file
+                if files_since_cache >= cache_interval:
+                    self._save_cache()
+                    files_since_cache = 0
         
         # Final cache save
         if files_since_cache > 0:
             self._save_cache()
+        
+        # Save the plan
+        self.plan.mark_stage_complete('stage1')
+        self.plan.save(self.plan_file)
         
         print()
         print("=" * 60)
@@ -189,8 +308,9 @@ class Stage1Processor:
         print(f"Successfully processed: {len(self.results)}")
         if skipped_count > 0:
             print(f"Skipped (size limit): {skipped_count}")
-        if error_count > 0:
-            print(f"Errors: {error_count}")
+        if self.error_count > 0:
+            action = "recorded in plan" if self.dry_run else f"moved to {self.error_files_dir}"
+            print(f"Errors ({action}): {self.error_count}")
         print()
         
         return self.results
@@ -206,6 +326,10 @@ class Stage1Processor:
             output_file = self.config.get_stage1_output_file()
         
         output_path = Path(output_file)
+        
+        # If output path is relative, place it in the cache directory
+        if not output_path.is_absolute():
+            output_path = self.cache_dir / output_path
         
         # Create output directory if it doesn't exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +352,15 @@ class Stage1Processor:
         
         # Clear cache after successful completion
         self._clear_cache()
+        
+        # Print plan summary
+        print()
+        print("Plan Summary:")
+        plan_summary = self.plan.get_summary()
+        print(f"  Total operations planned: {plan_summary['total_operations']}")
+        for op_type, count in plan_summary.get('by_type', {}).items():
+            print(f"    {op_type}: {count}")
+        print(f"  Plan saved to: {self.plan_file.absolute()}")
         
         # Print statistics
         total_size = sum(file['file_size'] for file in self.results)

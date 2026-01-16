@@ -38,6 +38,8 @@ Thumbs.db
 
 # Project specific
 file_metadata.json
+stage1_metadata.json
+airganizer_plan.json
 *.json.bak
 test_files/
 .airganizer_cache/
