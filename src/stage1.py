@@ -8,6 +8,9 @@ import sys
 import pickle
 import shutil
 import logging
+import warnings
+import contextlib
+import io
 from pathlib import Path
 from typing import List, Dict, Any, Set
 from tqdm import tqdm
@@ -54,6 +57,9 @@ class Stage1Processor:
         
         # Setup error logging
         self._setup_error_logging()
+        
+        # Suppress warnings from libraries
+        warnings.filterwarnings('ignore')
         
         # Setup error files directory
         self.error_files_dir = Path(self.config.get_error_files_directory())
@@ -290,59 +296,89 @@ class Stage1Processor:
                     self.processed_files.add(file_path_str)
                     continue
                 
-                # Extract metadata
-                file_metadata = self.metadata_extractor.extract_all_metadata(
-                    file_path=file_path,
-                    extract_exif=self.config.should_extract_exif(),
-                    extract_audio=self.config.should_extract_audio_metadata(),
-                    extract_video=self.config.should_extract_video_metadata(),
-                    extract_document=self.config.should_extract_document_metadata()
-                )
-                
-                self.results.append(file_metadata.to_dict())
-                self.processed_files.add(file_path_str)
-                files_since_cache += 1
-                
-                # Save cache periodically
-                if files_since_cache >= cache_interval:
-                    self._save_cache()
-                    files_since_cache = 0
-            
-            except Exception as e:
-                self.error_count += 1
-                error_msg = str(e)
-                
-                # Get relative path for clearer output
+                # Extract metadata with stderr suppression
+                # Suppress stderr to prevent library errors from appearing in console
+                stderr_capture = io.StringIO()
                 try:
-                    source_dir = Path(self.config.get_source_directory())
-                    relative_path = file_path.relative_to(source_dir)
-                    display_path = str(relative_path)
-                except:
-                    display_path = str(file_path)
-                
-                # Log error to file
-                self.error_logger.error(f"Error processing file: {display_path}")
-                self.error_logger.error(f"  Full path: {file_path.absolute()}")
-                self.error_logger.error(f"  Error: {error_msg}")
-                
-                # Move/record the problematic file
-                if self._move_error_file(file_path, error_msg):
-                    error_dest = self.error_files_dir / Path(display_path)
-                    action = "Recorded in plan" if self.dry_run else f"Moved to {error_dest}"
-                    self.error_logger.error(f"  Action: {action}")
+                    with contextlib.redirect_stderr(stderr_capture):
+                        file_metadata = self.metadata_extractor.extract_all_metadata(
+                            file_path=file_path,
+                            extract_exif=self.config.should_extract_exif(),
+                            extract_audio=self.config.should_extract_audio_metadata(),
+                            extract_video=self.config.should_extract_video_metadata(),
+                            extract_document=self.config.should_extract_document_metadata()
+                        )
                     
-                    # Save plan immediately after adding error operation
-                    self.plan.save(self.plan_file)
+                    # Check if any stderr output was captured (indicates library errors)
+                    stderr_output = stderr_capture.getvalue()
+                    if stderr_output:
+                        # Log the library errors
+                        self.error_logger.error(f"Library warnings/errors for {file_path.name}:")
+                        self.error_logger.error(f"  {stderr_output.strip()}")
+                    
+                    self.results.append(file_metadata.to_dict())
+                    self.processed_files.add(file_path_str)
+                    files_since_cache += 1
+                    
+                    # Save cache periodically
+                    if files_since_cache >= cache_interval:
+                        self._save_cache()
+                        files_since_cache = 0
                 
-                # Mark as processed to avoid retrying
-                # IMPORTANT: Do NOT add to results - file had an error
-                self.processed_files.add(file_path_str)
-                files_since_cache += 1
+                except KeyboardInterrupt:
+                    raise
                 
-                # Save cache after error to ensure we don't retry this file
-                if files_since_cache >= cache_interval:
-                    self._save_cache()
-                    files_since_cache = 0
+                except Exception as e:
+                    # This catches all extraction errors
+                    self.error_count += 1
+                    error_msg = str(e)
+                    
+                    # Get stderr output if any
+                    stderr_output = stderr_capture.getvalue()
+                    if stderr_output:
+                        error_msg = f"{error_msg}\nLibrary output: {stderr_output.strip()}"
+                    
+                    # Get relative path for clearer output
+                    try:
+                        source_dir = Path(self.config.get_source_directory())
+                        relative_path = file_path.relative_to(source_dir)
+                        display_path = str(relative_path)
+                    except:
+                        display_path = str(file_path)
+                    
+                    # Log error to file
+                    self.error_logger.error(f"Error processing file: {display_path}")
+                    self.error_logger.error(f"  Full path: {file_path.absolute()}")
+                    self.error_logger.error(f"  Error: {error_msg}")
+                    
+                    # Move/record the problematic file
+                    if self._move_error_file(file_path, error_msg):
+                        error_dest = self.error_files_dir / Path(display_path)
+                        action = "Recorded in plan" if self.dry_run else f"Moved to {error_dest}"
+                        self.error_logger.error(f"  Action: {action}")
+                        
+                        # Save plan immediately after adding error operation
+                        self.plan.save(self.plan_file)
+                    
+                    # Mark as processed to avoid retrying
+                    # IMPORTANT: Do NOT add to results - file had an error
+                    self.processed_files.add(file_path_str)
+                    files_since_cache += 1
+                    
+                    # Save cache after error to ensure we don't retry this file
+                    if files_since_cache >= cache_interval:
+                        self._save_cache()
+                        files_since_cache = 0
+            
+            except KeyboardInterrupt:
+                # Allow user to interrupt
+                print("\n\nProcess interrupted by user")
+                raise
+            
+            except Exception as outer_e:
+                # Catch-all for unexpected errors in the outer loop
+                print(f"\nUnexpected error in processing loop: {outer_e}", file=sys.stderr)
+                self.error_logger.error(f"Unexpected outer loop error: {outer_e}")
         
         # Final cache save
         if files_since_cache > 0:
