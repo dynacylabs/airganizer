@@ -7,6 +7,7 @@ import json
 import sys
 import pickle
 import shutil
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Set
 from tqdm import tqdm
@@ -39,6 +40,7 @@ class Stage1Processor:
         self.plan = None
         self.plan_file = None
         self.dry_run = config.is_dry_run()
+        self.error_logger = None
     
     def initialize(self):
         """Initialize components"""
@@ -49,6 +51,9 @@ class Stage1Processor:
         self.cache_dir = Path(self.config.get_cache_directory())
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_dir / "stage1_progress.pkl"
+        
+        # Setup error logging
+        self._setup_error_logging()
         
         # Setup error files directory
         self.error_files_dir = Path(self.config.get_error_files_directory())
@@ -73,6 +78,39 @@ class Stage1Processor:
             calculate_hash=self.config.should_calculate_hash()
         )
     
+    def _setup_error_logging(self):
+        """Setup error logging to file"""
+        error_log_path = self.cache_dir / "errors.log"
+        
+        # Create a logger specifically for errors
+        self.error_logger = logging.getLogger('airganizer_errors')
+        self.error_logger.setLevel(logging.ERROR)
+        
+        # Remove any existing handlers
+        self.error_logger.handlers = []
+        
+        # Create file handler
+        file_handler = logging.FileHandler(error_log_path, mode='a', encoding='utf-8')
+        file_handler.setLevel(logging.ERROR)
+        
+        # Create formatter
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        self.error_logger.addHandler(file_handler)
+        
+        # Don't propagate to root logger
+        self.error_logger.propagate = False
+        
+        # Log session start
+        self.error_logger.error("=" * 60)
+        self.error_logger.error("Stage 1 Session Started")
+        self.error_logger.error("=" * 60)
+    
     def _load_cache(self) -> bool:
         """
         Load progress from cache if available
@@ -95,7 +133,9 @@ class Stage1Processor:
             return True
         
         except Exception as e:
-            print(f"Warning: Could not load cache: {e}")
+            error_msg = f"Could not load cache: {e}"
+            self.error_logger.error(error_msg)
+            print(f"Warning: {error_msg}")
             return False
     
     def _save_cache(self):
@@ -111,7 +151,9 @@ class Stage1Processor:
                 pickle.dump(cache_data, f)
         
         except Exception as e:
-            print(f"Warning: Could not save cache: {e}")
+            error_msg = f"Could not save cache: {e}"
+            self.error_logger.error(error_msg)
+            print(f"Warning: {error_msg}")
     
     def _clear_cache(self):
         """Clear cache file"""
@@ -119,7 +161,9 @@ class Stage1Processor:
             if self.cache_file.exists():
                 self.cache_file.unlink()
         except Exception as e:
-            print(f"Warning: Could not clear cache: {e}")
+            error_msg = f"Could not clear cache: {e}"
+            self.error_logger.error(error_msg)
+            print(f"Warning: {error_msg}")
     
     def _move_error_file(self, file_path: Path, error_message: str = None) -> bool:
         """
@@ -185,7 +229,8 @@ class Stage1Processor:
             return True
         
         except Exception as e:
-            print(f"Warning: Could not {'record' if self.dry_run else 'move'} error file {file_path}: {e}", file=sys.stderr)
+            error_msg = f"Could not {'record' if self.dry_run else 'move'} error file {file_path}: {e}"
+            self.error_logger.error(error_msg)
             return False
     
     def process(self) -> List[Dict[str, Any]]:
@@ -203,6 +248,7 @@ class Stage1Processor:
         print(f"Cache directory: {self.cache_dir.absolute()}")
         print(f"Error files directory: {self.error_files_dir.absolute()}")
         print(f"Plan file: {self.plan_file.absolute()}")
+        print(f"Error log: {self.cache_dir / 'errors.log'}")
         print()
         
         # Try to resume from cache
@@ -274,19 +320,24 @@ class Stage1Processor:
                 except:
                     display_path = str(file_path)
                 
-                print(f"\n❌ Error processing: {display_path}", file=sys.stderr)
-                print(f"   Error: {error_msg}", file=sys.stderr)
+                # Log error to file
+                self.error_logger.error(f"Error processing file: {display_path}")
+                self.error_logger.error(f"  Full path: {file_path.absolute()}")
+                self.error_logger.error(f"  Error: {error_msg}")
                 
                 # Move/record the problematic file
-                action = "Recording in plan" if self.dry_run else "Moving to error files directory"
-                print(f"   {action}...", file=sys.stderr)
                 if self._move_error_file(file_path, error_msg):
                     error_dest = self.error_files_dir / Path(display_path)
-                    status = "Recorded" if self.dry_run else "Moved"
-                    print(f"   ✓ {status}: {error_dest}", file=sys.stderr)
+                    action = "Recorded in plan" if self.dry_run else f"Moved to {error_dest}"
+                    self.error_logger.error(f"  Action: {action}")
+                    
+                    # Save plan immediately after adding error operation
+                    self.plan.save(self.plan_file)
                 
-                self.processed_files.add(file_path_str)  # Mark as processed to avoid retrying
-                files_since_cache += 1  # Count toward cache interval
+                # Mark as processed to avoid retrying
+                # IMPORTANT: Do NOT add to results - file had an error
+                self.processed_files.add(file_path_str)
+                files_since_cache += 1
                 
                 # Save cache after error to ensure we don't retry this file
                 if files_since_cache >= cache_interval:
@@ -301,6 +352,14 @@ class Stage1Processor:
         self.plan.mark_stage_complete('stage1')
         self.plan.save(self.plan_file)
         
+        # Close error logger
+        if self.error_logger:
+            self.error_logger.error("=" * 60)
+            self.error_logger.error("Stage 1 Session Completed")
+            self.error_logger.error("=" * 60)
+            for handler in self.error_logger.handlers:
+                handler.close()
+        
         print()
         print("=" * 60)
         print(f"Processing complete!")
@@ -311,6 +370,7 @@ class Stage1Processor:
         if self.error_count > 0:
             action = "recorded in plan" if self.dry_run else f"moved to {self.error_files_dir}"
             print(f"Errors ({action}): {self.error_count}")
+            print(f"  See error details in: {self.cache_dir / 'errors.log'}")
         print()
         
         return self.results
@@ -358,9 +418,26 @@ class Stage1Processor:
         print("Plan Summary:")
         plan_summary = self.plan.get_summary()
         print(f"  Total operations planned: {plan_summary['total_operations']}")
-        for op_type, count in plan_summary.get('by_type', {}).items():
-            print(f"    {op_type}: {count}")
-        print(f"  Plan saved to: {self.plan_file.absolute()}")
+        if plan_summary['total_operations'] > 0:
+            for op_type, count in plan_summary.get('by_type', {}).items():
+                print(f"    {op_type}: {count}")
+            print(f"  Plan saved to: {self.plan_file.absolute()}")
+            
+            # If there are error operations, show details
+            if 'error' in plan_summary.get('by_type', {}):
+                print()
+                error_count = plan_summary['by_type']['error']
+                print(f"  ⚠ {error_count} file(s) with errors will be moved to error directory when plan is executed:")
+                error_ops = self.plan.get_error_operations_summary()
+                for i, op in enumerate(error_ops[:5], 1):  # Show first 5
+                    source_path = Path(op['source'])
+                    print(f"    {i}. {source_path.name}")
+                if len(error_ops) > 5:
+                    print(f"    ... and {len(error_ops) - 5} more (see plan file for full list)")
+                print()
+                print(f"  Set dry_run: false in config to execute these operations")
+        else:
+            print(f"  No operations to execute")
         
         # Print statistics
         total_size = sum(file['file_size'] for file in self.results)
@@ -390,7 +467,13 @@ class Stage1Processor:
             self.process()
             self.save_results()
         except Exception as e:
-            print(f"Error during Stage 1 processing: {e}", file=sys.stderr)
+            error_msg = f"Error during Stage 1 processing: {e}"
+            print(error_msg, file=sys.stderr)
+            if self.error_logger:
+                self.error_logger.error(error_msg)
+                self.error_logger.error("=" * 60)
+                self.error_logger.error("Stage 1 Session Failed")
+                self.error_logger.error("=" * 60)
             raise
 
 

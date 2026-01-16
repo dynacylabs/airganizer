@@ -40,6 +40,7 @@ Thumbs.db
 file_metadata.json
 stage1_metadata.json
 airganizer_plan.json
+errors.log
 *.json.bak
 test_files/
 .airganizer_cache/

@@ -80,6 +80,7 @@ Edit `config.yaml` to customize the behavior:
 - `cache.directory`: Directory for cache and temporary files (default: `.airganizer_cache`)
   - Used to store progress for resumability if the process is interrupted
   - All generated files (output, cache) are placed here by default
+  - Error log (`errors.log`) is stored here
 - `cache.error_files_directory`: Directory for files that had processing errors (default: `.airganizer_cache/error_files`)
   - Files that cause errors are automatically moved here and excluded from further processing
 
@@ -184,20 +185,32 @@ Stage 1 automatically saves progress to a cache file (in `.airganizer_cache/` by
 
 ### Error Handling
 
+**Error Logging:**
+- All errors are logged to `errors.log` in the cache directory
+- Console output is kept clean - errors don't clutter the terminal
+- Each error includes: timestamp, file path, error message, and action taken
+- Review the error log after processing: `cat .airganizer_cache/errors.log`
+
+**Error File Handling:**
+
 If Stage 1 encounters an error processing a file:
 
 **In Dry Run Mode (default):**
 1. **Recorded in Plan**: The problematic file and error are recorded in the plan file
-2. **No Files Moved**: The original file remains in place
-3. **Available for Review**: You can review all errors in the plan file before execution
-4. **Processing Continues**: The error doesn't stop the entire process
+2. **Logged to File**: Error details are written to `errors.log`
+3. **No Files Moved**: The original file remains in place
+4. **Excluded from Metadata**: File is NOT included in the output metadata
+5. **Available for Review**: You can review all errors in the plan and log files
+6. **Processing Continues**: The error doesn't stop the entire process
 
 **In Real Mode (dry_run: false):**
 1. **File is Moved**: The problematic file is automatically moved to the error files directory
-2. **Directory Structure Preserved**: The relative path from the source directory is preserved
-3. **Error Log Created**: An `.error.txt` file is created alongside the moved file with details
-4. **Excluded from Processing**: The file is marked as processed and won't be retried on resume
-5. **Processing Continues**: The error doesn't stop the entire process
+2. **Logged to File**: Error details are written to `errors.log`
+3. **Directory Structure Preserved**: The relative path from the source directory is preserved
+4. **Error Log Created**: An `.error.txt` file is created alongside the moved file with details
+5. **Excluded from Metadata**: File is NOT included in the output metadata
+6. **Excluded from Processing**: The file is marked as processed and won't be retried on resume
+7. **Processing Continues**: The error doesn't stop the entire process
 
 ### The Plan File
 

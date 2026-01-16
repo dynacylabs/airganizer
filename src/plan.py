@@ -137,6 +137,18 @@ class AirganizerPlan:
         
         return summary
     
+    def get_error_operations_summary(self) -> List[Dict[str, str]]:
+        """Get a list of error operations with key details"""
+        error_ops = self.get_operations_by_type('error')
+        return [
+            {
+                'source': op.source_path,
+                'destination': op.destination_path,
+                'reason': op.reason
+            }
+            for op in error_ops
+        ]
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert plan to dictionary"""
         return {
