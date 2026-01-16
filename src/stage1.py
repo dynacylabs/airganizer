@@ -201,6 +201,8 @@ class Stage1Processor:
                         'source_directory': str(source_dir.absolute())
                     }
                 )
+                # Debug log
+                self.error_logger.error(f"  Added to plan (operation count now: {len(self.plan.operations)})")
                 return True
             
             # In real mode, actually move the file
@@ -311,10 +313,13 @@ class Stage1Processor:
                     
                     # Check if any stderr output was captured (indicates library errors)
                     stderr_output = stderr_capture.getvalue()
-                    if stderr_output:
-                        # Log the library errors
-                        self.error_logger.error(f"Library warnings/errors for {file_path.name}:")
-                        self.error_logger.error(f"  {stderr_output.strip()}")
+                    if stderr_output and ('error' in stderr_output.lower() or 'invalid' in stderr_output.lower()):
+                        # Library had errors - treat as failed
+                        raise Exception(f"Library error: {stderr_output.strip()[:200]}")  # Limit error message length
+                    elif stderr_output:
+                        # Just warnings - log but don't fail
+                        self.error_logger.error(f"Library warnings for {file_path.name}:")
+                        self.error_logger.error(f"  {stderr_output.strip()[:500]}")
                     
                     self.results.append(file_metadata.to_dict())
                     self.processed_files.add(file_path_str)
@@ -407,6 +412,8 @@ class Stage1Processor:
             action = "recorded in plan" if self.dry_run else f"moved to {self.error_files_dir}"
             print(f"Errors ({action}): {self.error_count}")
             print(f"  See error details in: {self.cache_dir / 'errors.log'}")
+            if self.dry_run:
+                print(f"  These errors have been added to the plan file")
         print()
         
         return self.results
@@ -454,6 +461,11 @@ class Stage1Processor:
         print("Plan Summary:")
         plan_summary = self.plan.get_summary()
         print(f"  Total operations planned: {plan_summary['total_operations']}")
+        
+        # Debug: Check if operations exist
+        if hasattr(self.plan, 'operations'):
+            print(f"  Debug: Plan has {len(self.plan.operations)} operation objects")
+        
         if plan_summary['total_operations'] > 0:
             for op_type, count in plan_summary.get('by_type', {}).items():
                 print(f"    {op_type}: {count}")

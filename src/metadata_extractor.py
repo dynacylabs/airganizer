@@ -5,6 +5,7 @@ Metadata extraction module for Airganizer Stage 1
 import os
 import hashlib
 import mimetypes
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -25,12 +26,12 @@ class FileMetadata:
         self.metadata: Dict[str, Any] = {}
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert metadata to dictionary"""
-        return self.metadata
+        """Convert metadata to dictionary with sanitization"""
+        return MetadataExtractor._sanitize_metadata(self.metadata)
     
     def to_json(self) -> str:
         """Convert metadata to JSON string"""
-        return json.dumps(self.metadata, indent=2, default=str)
+        return json.dumps(self.to_dict(), indent=2, default=str)
 
 
 class MetadataExtractor:
@@ -47,6 +48,70 @@ class MetadataExtractor:
         
         # Initialize mimetypes
         mimetypes.init()
+    
+    @staticmethod
+    def _sanitize_string(value: Any) -> str:
+        """
+        Sanitize string values to remove binary/null bytes and control characters
+        
+        Args:
+            value: Value to sanitize
+        
+        Returns:
+            Sanitized string
+        """
+        if value is None:
+            return None
+        
+        try:
+            # Convert to string
+            s = str(value)
+            
+            # Remove null bytes and other control characters except newlines/tabs
+            s = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', s)
+            
+            # Replace sequences of multiple spaces with single space
+            s = re.sub(r'\s+', ' ', s)
+            
+            # Strip leading/trailing whitespace
+            s = s.strip()
+            
+            return s if s else None
+        except:
+            return None
+    
+    @staticmethod
+    def _sanitize_metadata(data: Any) -> Any:
+        """
+        Recursively sanitize metadata to remove binary data and control characters
+        
+        Args:
+            data: Data to sanitize (dict, list, or primitive)
+        
+        Returns:
+            Sanitized data
+        """
+        if isinstance(data, dict):
+            return {
+                key: MetadataExtractor._sanitize_metadata(value)
+                for key, value in data.items()
+            }
+        elif isinstance(data, list):
+            return [MetadataExtractor._sanitize_metadata(item) for item in data]
+        elif isinstance(data, str):
+            return MetadataExtractor._sanitize_string(data)
+        elif isinstance(data, bytes):
+            # Try to decode bytes, or convert to hex string
+            try:
+                decoded = data.decode('utf-8', errors='ignore')
+                return MetadataExtractor._sanitize_string(decoded)
+            except:
+                # If it's truly binary, return a truncated hex representation
+                if len(data) > 32:
+                    return f"<binary data: {len(data)} bytes>"
+                return data.hex()
+        else:
+            return data
     
     def extract_basic_metadata(self, file_path: Path) -> Dict[str, Any]:
         """
