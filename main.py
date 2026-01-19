@@ -10,6 +10,8 @@ from pathlib import Path
 from src.config import Config
 from src.stage1 import Stage1Scanner
 from src.stage2 import Stage2Processor
+from src.stage3 import Stage3Processor
+from src.stage4 import Stage4Processor
 from src.cache import CacheManager
 
 
@@ -76,7 +78,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--verbose',
         action='store_true',
-        help='Enable verbose output (DEBUG level logging)'
+        help='Enable verbose output (INFO+ level logging with progress)'
+    )
+    
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug output (DEBUG level logging with detailed information)'
     )
     
     parser.add_argument(
@@ -103,6 +111,44 @@ def parse_arguments() -> argparse.Namespace:
         help='Display cache statistics and exit'
     )
     
+    parser.add_argument(
+        '--skip-stage3',
+        action='store_true',
+        help='Skip Stage 3 (AI file analysis)'
+    )
+    
+    parser.add_argument(
+        '--max-files',
+        type=int,
+        help='Maximum number of files to analyze in Stage 3 (for testing)',
+        default=None
+    )
+    
+    parser.add_argument(
+        '--stage3-output',
+        help='Path to save Stage 3 unified results as JSON (optional)',
+        default=None
+    )
+    
+    parser.add_argument(
+        '--skip-stage4',
+        action='store_true',
+        help='Skip Stage 4 (taxonomic structure planning)'
+    )
+    
+    parser.add_argument(
+        '--stage4-output',
+        help='Path to save Stage 4 results with taxonomy as JSON (optional)',
+        default=None
+    )
+    
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        help='Batch size for Stage 4 taxonomy generation',
+        default=100
+    )
+    
     return parser.parse_args()
 
 
@@ -121,11 +167,18 @@ def main() -> int:
         config = Config(args.config)
         
         # Setup logging
-        log_level = 'DEBUG' if args.verbose else config.log_level
+        if args.debug:
+            log_level = 'DEBUG'
+        elif args.verbose:
+            log_level = 'INFO'
+        else:
+            log_level = config.log_level
         setup_logging(log_level)
         
         logger = logging.getLogger(__name__)
         logger.info("AI File Organizer starting...")
+        logger.debug(f"Debug mode enabled")
+        logger.debug(f"Arguments: {vars(args)}")
         logger.info(f"Config file: {args.config}")
         logger.info(f"Source directory: {args.src}")
         logger.info(f"Destination directory: {args.dst}")
@@ -262,6 +315,205 @@ def main() -> int:
             else:
                 failed = [m for m in required_models if not stage2_result.model_connectivity.get(m, False)]
                 logger.warning(f"\n  ✗ Some required models not accessible: {', '.join(failed)}")
+        
+        # Execute Stage 3: AI-powered file analysis (unless skipped)
+        if not args.skip_stage3:
+            logger.info("")
+            logger.info("=" * 60)
+            logger.info("STAGE 3: AI-Powered File Analysis")
+            logger.info("=" * 60)
+            
+            stage3_processor = Stage3Processor(config, cache_manager)
+            stage3_result = stage3_processor.process(
+                stage2_result,
+                use_cache=use_cache,
+                max_files=args.max_files
+            )
+            
+            # Display Stage 3 summary
+            logger.info("")
+            logger.info("STAGE 3 SUMMARY:")
+            logger.info(f"  Total files: {len(stage3_result.file_analyses)}")
+            logger.info(f"  Successfully analyzed: {stage3_result.total_analyzed}")
+            logger.info(f"  Errors: {stage3_result.total_errors}")
+            
+            # Display sample analyses
+            if stage3_result.file_analyses:
+                logger.info(f"\n  Sample analyses:")
+                for analysis in stage3_result.file_analyses[:3]:
+                    if not analysis.error:
+                        logger.info(f"    File: {Path(analysis.file_path).name}")
+                        logger.info(f"      Proposed name: {analysis.proposed_filename}")
+                        logger.info(f"      Description: {analysis.description[:80]}...")
+                        logger.info(f"      Tags: {', '.join(analysis.tags[:5])}")
+            
+            # Save Stage 3 results if requested
+            if args.stage3_output:
+                output_path = Path(args.stage3_output)
+                logger.info(f"\nSaving Stage 3 unified results to: {output_path}")
+                
+                # Get unified data combining all stages
+                unified_data = stage3_result.get_all_unified_data()
+                
+                output_data = {
+                    'summary': {
+                        'source_directory': stage2_result.stage1_result.source_directory,
+                        'total_files': stage2_result.stage1_result.total_files,
+                        'analyzed_files': stage3_result.total_analyzed,
+                        'errors': stage3_result.total_errors,
+                        'unique_mime_types': stage2_result.stage1_result.unique_mime_types,
+                        'available_models': [m.to_dict() for m in stage2_result.available_models],
+                        'mime_to_model_mapping': stage2_result.mime_to_model_mapping
+                    },
+                    'files': unified_data
+                }
+                
+                with open(output_path, 'w') as f:
+                    json.dump(output_data, f, indent=2)
+                logger.info("Stage 3 results saved")
+            
+            # Update final summary
+            logger.info("")
+            logger.info("=" * 60)
+            logger.info("FINAL SUMMARY")
+            logger.info("=" * 60)
+            logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+            logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+            logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+            logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+            logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
+            logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
+            logger.info("=" * 60)
+            
+            # Execute Stage 4: Taxonomic structure planning (unless skipped)
+            if not args.skip_stage4:
+                logger.info("")
+                logger.info("=" * 60)
+                logger.info("STAGE 4: Taxonomic Structure Planning")
+                logger.info("=" * 60)
+                
+                stage4_processor = Stage4Processor(config)
+                stage4_result = stage4_processor.process(
+                    stage3_result,
+                    batch_size=args.batch_size
+                )
+                
+                # Display Stage 4 summary
+                logger.info("")
+                logger.info("STAGE 4 SUMMARY:")
+                logger.info(f"  Total categories: {stage4_result.total_categories}")
+                logger.info(f"  Files assigned: {stage4_result.total_assigned}")
+                
+                # Display taxonomy structure
+                if stage4_result.taxonomy:
+                    max_depth = max(len(n.path.split('/')) for n in stage4_result.taxonomy)
+                    logger.info(f"  Max depth: {max_depth} levels")
+                    
+                    # Show top-level categories
+                    top_level = [n for n in stage4_result.taxonomy if '/' not in n.path]
+                    logger.info(f"\n  Top-level categories ({len(top_level)}):")
+                    for node in sorted(top_level, key=lambda n: n.file_count, reverse=True)[:10]:
+                        logger.info(f"    - {node.path}: {node.file_count} files")
+                        logger.info(f"      {node.description}")
+                
+                # Show sample assignments
+                if stage4_result.file_assignments:
+                    logger.info(f"\n  Sample file assignments:")
+                    for assignment in stage4_result.file_assignments[:5]:
+                        logger.info(f"    {Path(assignment.file_path).name}")
+                        logger.info(f"      → {assignment.target_path}/{assignment.proposed_filename}")
+                        logger.info(f"      Reason: {assignment.reasoning[:80]}...")
+                
+                # Save Stage 4 results if requested
+                if args.stage4_output:
+                    output_path = Path(args.stage4_output)
+                    logger.info(f"\nSaving Stage 4 results to: {output_path}")
+                    
+                    # Get unified data with assignments
+                    unified_data = stage4_result.get_all_unified_data()
+                    
+                    output_data = {
+                        'summary': {
+                            'source_directory': stage2_result.stage1_result.source_directory,
+                            'total_files': stage2_result.stage1_result.total_files,
+                            'analyzed_files': stage3_result.total_analyzed,
+                            'assigned_files': stage4_result.total_assigned,
+                            'total_categories': stage4_result.total_categories,
+                            'max_depth': max(len(n.path.split('/')) for n in stage4_result.taxonomy) if stage4_result.taxonomy else 0
+                        },
+                        'taxonomy': [t.to_dict() for t in stage4_result.taxonomy],
+                        'taxonomy_tree': stage4_result.get_taxonomy_tree(),
+                        'files': unified_data
+                    }
+                    
+                    with open(output_path, 'w') as f:
+                        json.dump(output_data, f, indent=2)
+                    logger.info("Stage 4 results saved")
+                
+                # Update final summary
+                logger.info("")
+                logger.info("=" * 60)
+                logger.info("FINAL SUMMARY")
+                logger.info("=" * 60)
+                logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+                logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+                logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+                logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+                logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
+                logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
+                logger.info(f"Stage 4 - Categories created: {stage4_result.total_categories}")
+                logger.info(f"Stage 4 - Files assigned: {stage4_result.total_assigned}")
+                logger.info("=" * 60)
+                
+                # Save complete results if requested (backward compatible)
+                if args.output and not args.stage4_output:
+                    output_path = Path(args.output)
+                    logger.info(f"\nSaving complete results to: {output_path}")
+                    with open(output_path, 'w') as f:
+                        json.dump(stage4_result.to_dict(), f, indent=2)
+                    logger.info("Complete results saved")
+            
+            else:
+                # Stage 4 skipped
+                logger.info("")
+                logger.info("=" * 60)
+                logger.info("FINAL SUMMARY (Stage 4 skipped)")
+                logger.info("=" * 60)
+                logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+                logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+                logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+                logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+                logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
+                logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
+                logger.info("=" * 60)
+                
+                # Save complete results if requested (backward compatible)
+                if args.output and not args.stage3_output:
+                    output_path = Path(args.output)
+                    logger.info(f"\nSaving complete results to: {output_path}")
+                    with open(output_path, 'w') as f:
+                        json.dump(stage3_result.to_dict(), f, indent=2)
+                    logger.info("Complete results saved")
+            
+        else:
+            # Stage 3 skipped - display Stage 2 summary
+            logger.info("")
+            logger.info("=" * 60)
+            logger.info("FINAL SUMMARY (Stage 3 skipped)")
+            logger.info("=" * 60)
+            logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+            logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+            logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+            logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+            logger.info("=" * 60)
+            
+            # Save Stage 2 results if requested
+            if args.output:
+                output_path = Path(args.output)
+                logger.info(f"\nSaving Stage 2 results to: {output_path}")
+                with open(output_path, 'w') as f:
+                    json.dump(stage2_result.to_dict(), f, indent=2)
+                logger.info("Results saved successfully")
         
         # Display final summary
         logger.info("")

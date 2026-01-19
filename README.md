@@ -4,26 +4,45 @@ An AI-powered file organizer that automatically scans, analyzes, and organizes f
 
 ## Features
 
-### Stage 1: File Scanning and Enumeration
+### Stage 1: File Scanning and Metadata Collection
 - Recursively scan source directories
 - Collect comprehensive file information:
-  - File name
-  - Full file path
-  - MIME type detection
-  - File size
+  - File name, path, MIME type, size
+  - EXIF data from images (camera, GPS, date, etc.)
+  - File-specific metadata (dimensions, duration, page count, etc.)
+  - Binwalk analysis for embedded data detection
 - Extract unique MIME types from all scanned files
-- **AI Model Discovery** with three methods:
-  - **Method 1 (Config)**: Use predefined models from configuration file
-  - **Method 2 (Local Enumerate)**: Automatically discover local AI models
-  - **Method 3 (Local Download)**: Discover and download models as needed
-- **Intelligent MIME-to-Model Mapping**: AI-powered recommendations for which model should analyze each file type
-- **Automatic Model Download**: Downloads required models based on mapping (local_download mode)
-- **Connectivity Verification**: Tests all models (local and online) to ensure readiness
-- Support for both online (OpenAI, Anthropic) and local (Ollama) AI models
 - Configurable exclusion rules for files and directories
 - Hidden file handling
 - Symbolic link support
 - Error tracking and reporting
+
+### Stage 2: AI Model Discovery and Mapping
+- **AI Model Discovery** with multiple methods:
+  - **Auto**: Automatically discover models from all providers (recommended)
+  - **Config**: Use predefined models from configuration file
+  - **Local Enumerate**: Automatically discover local AI models only
+  - **Local Download**: Discover and download local models as needed
+- **Centralized Credentials**: Specify API keys once per provider
+- **Model Mode Selection**: Choose online-only, local-only, or mixed operation
+- **Intelligent MIME-to-Model Mapping**: AI-powered recommendations for which model should analyze each file type
+- **Automatic Model Download**: Downloads required models based on mapping (local_download mode)
+- **Connectivity Verification**: Tests all models (local and online) to ensure readiness
+- Support for both online (OpenAI, Anthropic) and local (Ollama) AI models
+
+### Stage 3: AI-Powered File Analysis ✨ NEW
+- Analyzes each file with its assigned AI model
+- Generates for every file:
+  - **Proposed filename**: Descriptive, meaningful name
+  - **Description**: What's in the file (summary, contents, etc.)
+  - **Tags**: Keywords for categorization
+- Supports multiple AI providers:
+  - **OpenAI**: GPT-4, GPT-4o with vision
+  - **Anthropic**: Claude 3 family with vision
+  - **Ollama**: Local models (LLaVA, Llama 3.2 Vision, etc.)
+- Unified output combining all stages (metadata + mapping + analysis)
+- Graceful error handling and retry logic
+- Progress tracking and detailed logging
 
 ## Installation
 
@@ -181,44 +200,91 @@ Note: This method will also download any additional models required by the MIME-
 ### Basic Usage
 
 ```bash
-python main.py --config config.example.yaml --src /path/to/source --dst /path/to/destination
+# Run all three stages (scan, map, analyze)
+python main.py \
+  --config config.example.yaml \
+  --src /path/to/source \
+  --dst /path/to/destination \
+  --stage3-output results.json
 ```
 
 ### Command Line Arguments
 
-- `--config`: Path to the configuration file (YAML format) - **Required**
-- `--src`: Source directory to scan for files - **Required**
-- `--dst`: Destination directory for organized files - **Required**
-- `--output`: Path to save Stage 1 results as JSON (optional)
+**Required:**
+- `--config`: Path to the configuration file (YAML format)
+- `--src`: Source directory to scan for files
+- `--dst`: Destination directory for organized files
+
+**Output Options:**
+- `--output`: Path to save complete results as JSON
+- `--stage1-output`: Path to save Stage 1 results only
+- `--stage3-output`: Path to save unified results (all stages combined)
+
+**Stage Control:**
+- `--skip-stage3`: Skip AI analysis (only run Stages 1 & 2)
+- `--max-files N`: Analyze only first N files (testing)
+
+**Cache Options:**
+- `--no-cache`: Disable cache (process everything from scratch)
+- `--clear-cache [all|stage1|stage2]`: Clear cache before running
+- `--cache-dir PATH`: Override cache directory location
+- `--cache-stats`: Display cache statistics and exit
+
+**Other:**
 - `--verbose`: Enable verbose output (DEBUG level logging)
 
 ### Examples
 
-**With online AI models:**
+**Full workflow with online AI models:**
 ```bash
 # Set API keys
 export OPENAI_API_KEY="your-api-key"
 export ANTHROPIC_API_KEY="your-api-key"
 
-# Run the organizer
+# Run complete analysis
 python main.py \
   --config config.example.yaml \
   --src /home/user/Documents \
   --dst /home/user/Organized \
-  --output stage1_results.json \
+  --stage3-output unified_results.json \
   --verbose
 ```
 
-**With local Ollama models:**
+**Test with limited files first:**
+```bash
+# Analyze only 10 files to test configuration
+python main.py \
+  --config config.example.yaml \
+  --src /home/user/Documents \
+  --dst /home/user/Organized \
+  --max-files 10 \
+  --stage3-output test_results.json
+```
+
+**With local Ollama models (privacy/offline):**
 ```bash
 # Make sure Ollama is running
 ollama serve
 
-# Run the organizer with local models only
+# Download vision-capable model
+ollama pull llama3.2-vision
+
+# Run with local models only
 python main.py \
   --config config.example.yaml \
   --src /home/user/Documents \
-  --dst /home/user/Organized
+  --dst /home/user/Organized \
+  --stage3-output results.json
+```
+
+**Skip Stage 3 (only scan and map, no AI analysis):**
+```bash
+python main.py \
+  --config config.example.yaml \
+  --src /home/user/Documents \
+  --dst /home/user/Organized \
+  --skip-stage3 \
+  --output mapping_results.json
 ```
 
 ## Project Structure
@@ -229,6 +295,20 @@ airganizer/
 ├── requirements.txt             # Python dependencies
 ├── config.example.yaml          # Example configuration file
 ├── src/
+│   ├── config.py               # Configuration handler
+│   ├── models.py               # Data models
+│   ├── stage1.py               # Stage 1: File scanning
+│   ├── stage2.py               # Stage 2: Model discovery
+│   ├── stage3.py               # Stage 3: AI analysis
+│   ├── ai_interface.py         # AI provider interface
+│   ├── model_discovery.py      # Model discovery logic
+│   ├── cache.py                # Cache management
+│   └── ...
+├── docs/
+│   ├── CONFIGURATION.md        # Configuration guide
+│   ├── STAGE3_GUIDE.md         # Stage 3 documentation
+│   └── ...
+└── tests/
 │   ├── __init__.py
 │   ├── config.py               # Configuration handler
 │   ├── models.py               # Data models (FileInfo, ModelInfo, Stage1Result)

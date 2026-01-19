@@ -32,6 +32,10 @@ class Stage1Scanner:
             enabled=config.cache_enabled,
             ttl_hours=config.cache_ttl_hours
         )
+        logger.debug(f"Stage1Scanner initialized with cache_enabled={config.cache_enabled}")
+        logger.debug(f"  - include_hidden={config.include_hidden}")
+        logger.debug(f"  - exclude_extensions={config.exclude_extensions}")
+        logger.debug(f"  - max_file_size={config.max_file_size}")
     
     def _should_exclude_file(self, file_path: Path) -> bool:
         """
@@ -45,6 +49,7 @@ class Stage1Scanner:
         """
         # Check if hidden file should be excluded
         if not self.config.include_hidden and file_path.name.startswith('.'):
+            logger.debug(f"Excluding hidden file: {file_path}")
             return True
         
         # Check if file extension should be excluded

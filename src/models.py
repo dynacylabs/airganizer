@@ -144,3 +144,247 @@ class Stage2Result:
             Model name or None if no mapping exists
         """
         return self.mime_to_model_mapping.get(file_info.mime_type)
+
+@dataclass
+class FileAnalysis:
+    """AI analysis results for a single file."""
+    
+    file_path: str
+    assigned_model: str
+    proposed_filename: str
+    description: str
+    tags: List[str]
+    analysis_timestamp: Optional[str] = None
+    error: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert FileAnalysis to dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class Stage3Result:
+    """Results from Stage 3: AI-powered file analysis."""
+    
+    stage2_result: Stage2Result
+    file_analyses: List[FileAnalysis] = field(default_factory=list)
+    total_analyzed: int = 0
+    total_errors: int = 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert Stage3Result to dictionary."""
+        return {
+            'stage2_result': self.stage2_result.to_dict(),
+            'file_analyses': [a.to_dict() for a in self.file_analyses],
+            'total_analyzed': self.total_analyzed,
+            'total_errors': self.total_errors
+        }
+    
+    def add_analysis(self, analysis: FileAnalysis) -> None:
+        """Add a file analysis to the results."""
+        self.file_analyses.append(analysis)
+        if analysis.error:
+            self.total_errors += 1
+        else:
+            self.total_analyzed += 1
+    
+    def get_analysis_for_file(self, file_path: str) -> Optional[FileAnalysis]:
+        """
+        Get the analysis for a specific file.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            FileAnalysis object or None if not found
+        """
+        for analysis in self.file_analyses:
+            if analysis.file_path == file_path:
+                return analysis
+        return None
+    
+    def get_unified_file_data(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Get unified data for a file combining all stages.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Dictionary with stage1 metadata, stage2 mapping, and stage3 analysis
+        """
+        # Find file info from Stage 1
+        file_info = None
+        for f in self.stage2_result.stage1_result.files:
+            if f.file_path == file_path:
+                file_info = f
+                break
+        
+        if not file_info:
+            return None
+        
+        # Get Stage 2 mapping
+        assigned_model = self.stage2_result.get_model_for_file(file_info)
+        
+        # Get Stage 3 analysis
+        analysis = self.get_analysis_for_file(file_path)
+        
+        # Combine all data
+        unified = {
+            'file_info': file_info.to_dict(),
+            'assigned_model': assigned_model,
+            'analysis': analysis.to_dict() if analysis else None
+        }
+        
+        return unified
+    
+    def get_all_unified_data(self) -> List[Dict[str, Any]]:
+        """
+        Get unified data for all files combining all stages.
+        
+        Returns:
+            List of dictionaries, each containing complete file data from all stages
+        """
+        unified_data = []
+        
+        for file_info in self.stage2_result.stage1_result.files:
+            data = self.get_unified_file_data(file_info.file_path)
+            if data:
+                unified_data.append(data)
+        
+        return unified_data
+
+
+@dataclass
+class TaxonomyNode:
+    """Represents a node in the taxonomic directory structure."""
+    
+    path: str                           # Full path (e.g., "Photos/Nature/Wildlife")
+    category: str                       # Node name (e.g., "Wildlife")
+    description: str                    # What belongs here
+    file_count: int = 0                 # Number of files assigned here
+    subcategories: List[str] = field(default_factory=list)  # Child paths
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert TaxonomyNode to dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class FileAssignment:
+    """Assignment of a file to a target location in the taxonomy."""
+    
+    file_path: str                      # Original file path
+    target_path: str                    # Target directory path in taxonomy
+    proposed_filename: str              # Filename from Stage 3
+    reasoning: str                      # Why assigned to this location
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert FileAssignment to dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class Stage4Result:
+    """Results from Stage 4: Taxonomic structure planning."""
+    
+    stage3_result: Stage3Result
+    taxonomy: List[TaxonomyNode] = field(default_factory=list)
+    file_assignments: List[FileAssignment] = field(default_factory=list)
+    total_categories: int = 0
+    total_assigned: int = 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert Stage4Result to dictionary."""
+        return {
+            'stage3_result': self.stage3_result.to_dict(),
+            'taxonomy': [t.to_dict() for t in self.taxonomy],
+            'file_assignments': [a.to_dict() for a in self.file_assignments],
+            'total_categories': self.total_categories,
+            'total_assigned': self.total_assigned
+        }
+    
+    def add_taxonomy_node(self, node: TaxonomyNode) -> None:
+        """Add a taxonomy node."""
+        self.taxonomy.append(node)
+        self.total_categories = len(self.taxonomy)
+    
+    def add_file_assignment(self, assignment: FileAssignment) -> None:
+        """Add a file assignment."""
+        self.file_assignments.append(assignment)
+        self.total_assigned = len(self.file_assignments)
+        
+        # Update file count in taxonomy
+        for node in self.taxonomy:
+            if node.path == assignment.target_path:
+                node.file_count += 1
+                break
+    
+    def get_assignment_for_file(self, file_path: str) -> Optional[FileAssignment]:
+        """Get the assignment for a specific file."""
+        for assignment in self.file_assignments:
+            if assignment.file_path == file_path:
+                return assignment
+        return None
+    
+    def get_taxonomy_tree(self) -> Dict[str, Any]:
+        """Get hierarchical taxonomy tree structure."""
+        tree = {}
+        
+        for node in self.taxonomy:
+            parts = node.path.split('/')
+            current = tree
+            
+            for i, part in enumerate(parts):
+                if part not in current:
+                    current[part] = {
+                        '_info': {
+                            'path': '/'.join(parts[:i+1]),
+                            'description': node.description if i == len(parts)-1 else '',
+                            'file_count': node.file_count if i == len(parts)-1 else 0
+                        },
+                        '_children': {}
+                    }
+                current = current[part]['_children']
+        
+        return tree
+    
+    def get_unified_file_data(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Get complete unified data for a file including Stage 4 assignment.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            Dictionary with all stage data plus target_path
+        """
+        # Get Stage 3 unified data
+        unified = self.stage3_result.get_unified_file_data(file_path)
+        if not unified:
+            return None
+        
+        # Add Stage 4 assignment
+        assignment = self.get_assignment_for_file(file_path)
+        if assignment:
+            unified['assignment'] = assignment.to_dict()
+        else:
+            unified['assignment'] = None
+        
+        return unified
+    
+    def get_all_unified_data(self) -> List[Dict[str, Any]]:
+        """
+        Get complete unified data for all files including Stage 4 assignments.
+        
+        Returns:
+            List of dictionaries with complete data from all stages
+        """
+        unified_data = []
+        
+        for file_info in self.stage3_result.stage2_result.stage1_result.files:
+            data = self.get_unified_file_data(file_info.file_path)
+            if data:
+                unified_data.append(data)
+        
+        return unified_data
