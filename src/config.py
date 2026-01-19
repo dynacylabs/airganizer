@@ -1,123 +1,182 @@
-"""
-Configuration management for Airganizer
-"""
+"""Configuration file handler for AI File Organizer."""
 
 import os
-from pathlib import Path
-from typing import Dict, List, Any, Optional
 import yaml
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 
 class Config:
-    """Configuration manager for Airganizer"""
+    """Configuration handler for the AI File Organizer."""
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str):
         """
-        Initialize configuration from YAML file
+        Initialize the configuration handler.
         
         Args:
-            config_path: Path to the configuration file
+            config_path: Path to the YAML configuration file
         """
-        self.config_path = config_path
-        self.config_data = self._load_config()
+        self.config_path = Path(config_path)
+        self.config: Dict[str, Any] = {}
+        self._load_config()
+        self._validate_config()
     
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file"""
-        if not os.path.exists(self.config_path):
+    def _load_config(self) -> None:
+        """Load configuration from YAML file."""
+        if not self.config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
         
         with open(self.config_path, 'r') as f:
-            config = yaml.safe_load(f)
+            self.config = yaml.safe_load(f) or {}
+    
+    def _validate_config(self) -> None:
+        """Validate configuration structure and set defaults."""
+        # Set defaults for general settings
+        if 'general' not in self.config:
+            self.config['general'] = {}
         
-        return config
+        general = self.config['general']
+        general.setdefault('log_level', 'INFO')
+        general.setdefault('max_file_size', 0)
+        general.setdefault('exclude_extensions', [])
+        general.setdefault('exclude_dirs', ['.git', '__pycache__', 'node_modules', '.venv'])
+        
+        # Set defaults for stage1 settings
+        if 'stage1' not in self.config:
+            self.config['stage1'] = {}
+        
+        stage1 = self.config['stage1']
+        stage1.setdefault('recursive', True)
+        stage1.setdefault('follow_symlinks', False)
+        stage1.setdefault('include_hidden', False)
+        
+        # Set defaults for cache settings
+        if 'cache' not in self.config:
+            self.config['cache'] = {}
+        
+        cache = self.config['cache']
+        cache.setdefault('enabled', True)
+        cache.setdefault('directory', '.airganizer_cache')
+        cache.setdefault('ttl_hours', 24)
+        
+        # Set defaults for models settings
+        if 'models' not in self.config:
+            self.config['models'] = {}
+        
+        models = self.config['models']
+        models.setdefault('model_mode', 'mixed')
+        models.setdefault('discovery_method', 'auto')
+        
+        # Set defaults for provider configs
+        for provider in ['openai', 'anthropic', 'ollama']:
+            if provider not in models:
+                models[provider] = {}
+            
+            provider_config = models[provider]
+            provider_config.setdefault('auto_enumerate', True)
+            provider_config.setdefault('models', [])
+            
+            if provider == 'openai':
+                provider_config.setdefault('api_key_env', 'OPENAI_API_KEY')
+                provider_config.setdefault('api_key', '')
+            elif provider == 'anthropic':
+                provider_config.setdefault('api_key_env', 'ANTHROPIC_API_KEY')
+                provider_config.setdefault('api_key', '')
+            elif provider == 'ollama':
+                provider_config.setdefault('base_url', 'http://localhost:11434')
+                provider_config.setdefault('auto_download_models', [])
     
-    def is_dry_run(self) -> bool:
-        """Check if running in dry run mode (no actual file moves)"""
-        return self.config_data.get('global', {}).get('dry_run', True)
-    
-    def validate(self) -> bool:
+    def get(self, key: str, default: Any = None) -> Any:
         """
-        Validate configuration
+        Get a configuration value.
         
+        Args:
+            key: Configuration key (supports dot notation, e.g., 'general.log_level')
+            default: Default value if key not found
+            
         Returns:
-            True if configuration is valid
-        
-        Raises:
-            ValueError: If configuration is invalid
+            Configuration value or default
         """
-        # Check source directory
-        source_dir = self.get_source_directory()
-        if not source_dir:
-            raise ValueError("Source directory not specified in configuration")
+        keys = key.split('.')
+        value = self.config
         
-        # Check destination directory
-        dest_dir = self.get_destination_directory()
-        if not dest_dir:
-            raise ValueError("Destination directory not specified in configuration")
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
         
-        return True
+        return value
     
-    def get_source_directory(self) -> Optional[str]:
-        """Get source directory from configuration"""
-        return self.config_data.get('source', {}).get('directory')
+    @property
+    def log_level(self) -> str:
+        """Get the configured log level."""
+        return self.get('general.log_level', 'INFO')
     
-    def get_destination_directory(self) -> Optional[str]:
-        """Get destination directory from configuration"""
-        return self.config_data.get('destination', {}).get('directory')
+    @property
+    def max_file_size(self) -> int:
+        """Get the maximum file size in bytes."""
+        size_mb = self.get('general.max_file_size', 0)
+        return size_mb * 1024 * 1024 if size_mb > 0 else 0
     
-    def get_cache_directory(self) -> str:
-        """Get cache directory from configuration"""
-        return self.config_data.get('cache', {}).get('directory', '.airganizer_cache')
+    @property
+    def exclude_extensions(self) -> List[str]:
+        """Get list of file extensions to exclude."""
+        return self.get('general.exclude_extensions', [])
     
-    def get_error_files_directory(self) -> str:
-        """Get error files directory from configuration"""
-        return self.config_data.get('cache', {}).get('error_files_directory', '.airganizer_cache/error_files')
+    @property
+    def exclude_dirs(self) -> List[str]:
+        """Get list of directories to exclude."""
+        return self.get('general.exclude_dirs', [])
     
-    def get_include_patterns(self) -> List[str]:
-        """Get file include patterns"""
-        return self.config_data.get('source', {}).get('include', ['*'])
+    @property
+    def recursive(self) -> bool:
+        """Check if recursive scanning is enabled."""
+        return self.get('stage1.recursive', True)
     
-    def get_exclude_patterns(self) -> List[str]:
-        """Get file exclude patterns"""
-        return self.config_data.get('source', {}).get('exclude', [])
+    @property
+    def follow_symlinks(self) -> bool:
+        """Check if symbolic links should be followed."""
+        return self.get('stage1.follow_symlinks', False)
     
-    def should_extract_exif(self) -> bool:
-        """Check if EXIF data extraction is enabled"""
-        return self.config_data.get('metadata', {}).get('extract_exif', True)
+    @property
+    def include_hidden(self) -> bool:
+        """Check if hidden files should be included."""
+        return self.get('stage1.include_hidden', False)
     
-    def should_extract_audio_metadata(self) -> bool:
-        """Check if audio metadata extraction is enabled"""
-        return self.config_data.get('metadata', {}).get('extract_audio_metadata', True)
+    @property
+    def cache_enabled(self) -> bool:
+        """Check if caching is enabled."""
+        return self.get('cache.enabled', True)
     
-    def should_extract_video_metadata(self) -> bool:
-        """Check if video metadata extraction is enabled"""
-        return self.config_data.get('metadata', {}).get('extract_video_metadata', True)
+    @property
+    def cache_directory(self) -> str:
+        """Get the cache directory path."""
+        return self.get('cache.directory', '.airganizer_cache')
     
-    def should_extract_document_metadata(self) -> bool:
-        """Check if document metadata extraction is enabled"""
-        return self.config_data.get('metadata', {}).get('extract_document_metadata', True)
+    @property
+    def cache_ttl_hours(self) -> int:
+        """Get the cache TTL in hours."""
+        return self.get('cache.ttl_hours', 24)
     
-    def get_stage1_output_file(self) -> str:
-        """Get Stage 1 output file path"""
-        return self.config_data.get('stage1', {}).get('output_file', 'file_metadata.json')
+    @property
+    def model_mode(self) -> str:
+        """Get the model mode (online_only, local_only, or mixed)."""
+        return self.get('models.model_mode', 'mixed')
     
-    def get_plan_file(self) -> str:
-        """Get plan file path"""
-        return self.config_data.get('stage1', {}).get('plan_file', 'airganizer_plan.json')
+    @property
+    def discovery_method(self) -> str:
+        """Get the model discovery method."""
+        return self.get('models.discovery_method', 'config')
     
-    def should_calculate_hash(self) -> bool:
-        """Check if file hash calculation is enabled"""
-        return self.config_data.get('stage1', {}).get('calculate_hash', False)
+    @property
+    def openai_api_key(self) -> Optional[str]:
+        """Get the OpenAI API key from environment."""
+        api_key_env = self.get('models.openai.api_key_env', 'OPENAI_API_KEY')
+        return os.getenv(api_key_env)
     
-    def get_max_file_size(self) -> int:
-        """Get maximum file size to process (in bytes)"""
-        max_size_mb = self.config_data.get('stage1', {}).get('max_file_size', 0)
-        return max_size_mb * 1024 * 1024 if max_size_mb > 0 else 0
-    
-    def get_cache_interval(self) -> int:
-        """Get cache interval (number of files between cache saves)"""
-        return self.config_data.get('stage1', {}).get('cache_interval', 100)
-    
-    def should_resume_from_cache(self) -> bool:
-        """Check if should resume from cache if available"""
-        return self.config_data.get('stage1', {}).get('resume_from_cache', True)
+    @property
+    def anthropic_api_key(self) -> Optional[str]:
+        """Get the Anthropic API key from environment."""
+        api_key_env = self.get('models.anthropic.api_key_env', 'ANTHROPIC_API_KEY')
+        return os.getenv(api_key_env)

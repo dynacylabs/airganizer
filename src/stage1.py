@@ -1,575 +1,267 @@
-"""
-Stage 1: File Enumeration and Metadata Collection
-Main orchestrator for Airganizer Stage 1
-"""
+"""Stage 1: File scanning, enumeration, and metadata collection."""
 
-import json
-import sys
-import pickle
-import shutil
 import logging
-import warnings
-import contextlib
-import io
+import magic
 from pathlib import Path
-from typing import List, Dict, Any, Set
-from tqdm import tqdm
+from typing import List, Optional
 
 from .config import Config
-from .file_enumerator import FileEnumerator
-from .metadata_extractor import MetadataExtractor
-from .plan import AirganizerPlan
+from .models import FileInfo, Stage1Result
+from .metadata_extractor import extract_exif_data, extract_metadata_by_mime, run_binwalk
+from .cache import CacheManager
 
 
-class Stage1Processor:
-    """Process files for Stage 1: enumeration and metadata collection"""
+logger = logging.getLogger(__name__)
+
+
+class Stage1Scanner:
+    """Stage 1: Scans directory and collects file information with metadata."""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
         """
-        Initialize Stage 1 processor
+        Initialize the Stage 1 scanner.
         
         Args:
             config: Configuration object
+            cache_manager: Optional CacheManager for caching results
         """
         self.config = config
-        self.file_enumerator = None
-        self.metadata_extractor = None
-        self.results: List[Dict[str, Any]] = []
-        self.processed_files: Set[str] = set()  # Track processed files for resumability
-        self.cache_dir = None
-        self.cache_file = None
-        self.error_files_dir = None
-        self.error_count = 0
-        self.plan = None
-        self.plan_file = None
-        self.dry_run = config.is_dry_run()
-        self.error_logger = None
-    
-    def initialize(self):
-        """Initialize components"""
-        # Validate configuration
-        self.config.validate()
-        
-        # Setup cache directory
-        self.cache_dir = Path(self.config.get_cache_directory())
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.cache_file = self.cache_dir / "stage1_progress.pkl"
-        
-        # Setup error logging
-        self._setup_error_logging()
-        
-        # Suppress warnings from libraries
-        warnings.filterwarnings('ignore')
-        
-        # Setup error files directory
-        self.error_files_dir = Path(self.config.get_error_files_directory())
-        self.error_files_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Setup plan file
-        plan_file = self.config.get_plan_file()
-        self.plan_file = self.cache_dir / plan_file if not Path(plan_file).is_absolute() else Path(plan_file)
-        
-        # Load or create plan
-        self.plan = AirganizerPlan.load_or_create(self.plan_file)
-        
-        # Initialize file enumerator
-        self.file_enumerator = FileEnumerator(
-            source_directory=self.config.get_source_directory(),
-            include_patterns=self.config.get_include_patterns(),
-            exclude_patterns=self.config.get_exclude_patterns()
-        )
-        
-        # Initialize metadata extractor
-        self.metadata_extractor = MetadataExtractor(
-            calculate_hash=self.config.should_calculate_hash()
+        self.mime = magic.Magic(mime=True)
+        self.cache_manager = cache_manager or CacheManager(
+            cache_dir=config.cache_directory,
+            enabled=config.cache_enabled,
+            ttl_hours=config.cache_ttl_hours
         )
     
-    def _setup_error_logging(self):
-        """Setup error logging to file"""
-        error_log_path = self.cache_dir / "errors.log"
-        
-        # Create a logger specifically for errors
-        self.error_logger = logging.getLogger('airganizer_errors')
-        self.error_logger.setLevel(logging.ERROR)
-        
-        # Remove any existing handlers
-        self.error_logger.handlers = []
-        
-        # Create file handler
-        file_handler = logging.FileHandler(error_log_path, mode='a', encoding='utf-8')
-        file_handler.setLevel(logging.ERROR)
-        
-        # Create formatter
-        formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        
-        # Add handler to logger
-        self.error_logger.addHandler(file_handler)
-        
-        # Don't propagate to root logger
-        self.error_logger.propagate = False
-        
-        # Log session start
-        self.error_logger.error("=" * 60)
-        self.error_logger.error("Stage 1 Session Started")
-        self.error_logger.error("=" * 60)
-    
-    def _load_cache(self) -> bool:
+    def _should_exclude_file(self, file_path: Path) -> bool:
         """
-        Load progress from cache if available
-        
-        Returns:
-            True if cache was loaded successfully
-        """
-        if not self.cache_file.exists():
-            return False
-        
-        try:
-            with open(self.cache_file, 'rb') as f:
-                cache_data = pickle.load(f)
-            
-            self.results = cache_data.get('results', [])
-            self.processed_files = cache_data.get('processed_files', set())
-            self.error_count = cache_data.get('error_count', 0)
-            
-            print(f"Loaded cache: {len(self.results)} files already processed")
-            return True
-        
-        except Exception as e:
-            error_msg = f"Could not load cache: {e}"
-            self.error_logger.error(error_msg)
-            print(f"Warning: {error_msg}")
-            return False
-    
-    def _save_cache(self):
-        """Save current progress to cache"""
-        try:
-            cache_data = {
-                'results': self.results,
-                'processed_files': self.processed_files,
-                'error_count': self.error_count,
-            }
-            
-            with open(self.cache_file, 'wb') as f:
-                pickle.dump(cache_data, f)
-        
-        except Exception as e:
-            error_msg = f"Could not save cache: {e}"
-            self.error_logger.error(error_msg)
-            print(f"Warning: {error_msg}")
-    
-    def _clear_cache(self):
-        """Clear cache file"""
-        try:
-            if self.cache_file.exists():
-                self.cache_file.unlink()
-        except Exception as e:
-            error_msg = f"Could not clear cache: {e}"
-            self.error_logger.error(error_msg)
-            print(f"Warning: {error_msg}")
-    
-    def _move_error_file(self, file_path: Path, error_message: str = None) -> bool:
-        """
-        Move a problematic file to the error files directory (or record in plan if dry_run)
+        Check if a file should be excluded based on configuration.
         
         Args:
-            file_path: Path to the file that had an error
-            error_message: The error message that occurred
-        
+            file_path: Path to the file
+            
         Returns:
-            True if file was moved/recorded successfully
+            True if file should be excluded, False otherwise
         """
-        try:
-            # Create a subdirectory structure to preserve relative paths
-            source_dir = Path(self.config.get_source_directory())
-            relative_path = file_path.relative_to(source_dir)
-            
-            # Destination path preserves directory structure
-            dest_path = self.error_files_dir / relative_path
-            
-            # In dry run mode, just record in plan
-            if self.dry_run:
-                self.plan.add_error_file(
-                    source_path=str(file_path.absolute()),
-                    destination_path=str(dest_path.absolute()),
-                    error_message=error_message or "Unknown error",
-                    file_metadata={
-                        'relative_path': str(relative_path),
-                        'source_directory': str(source_dir.absolute())
-                    }
-                )
-                # Debug log
-                self.error_logger.error(f"  Added to plan (operation count now: {len(self.plan.operations)})")
-                return True
-            
-            # In real mode, actually move the file
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(file_path), str(dest_path))
-            
-            # Create a detailed error log file alongside the moved file
-            error_log_path = dest_path.with_suffix(dest_path.suffix + '.error.txt')
-            with open(error_log_path, 'w') as f:
-                from datetime import datetime
-                f.write(f"=== File Processing Error ===\n")
-                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
-                f.write(f"\n")
-                f.write(f"Original Full Path:\n")
-                f.write(f"  {file_path.absolute()}\n")
-                f.write(f"\n")
-                f.write(f"Original Location (relative to source):\n")
-                f.write(f"  {relative_path}\n")
-                f.write(f"\n")
-                f.write(f"Source Directory:\n")
-                f.write(f"  {source_dir.absolute()}\n")
-                f.write(f"\n")
-                f.write(f"Moved To:\n")
-                f.write(f"  {dest_path.absolute()}\n")
-                f.write(f"\n")
-                if error_message:
-                    f.write(f"Error Details:\n")
-                    f.write(f"  {error_message}\n")
-                    f.write(f"\n")
-                f.write(f"=== End Error Log ===\n")
-            
+        # Check if hidden file should be excluded
+        if not self.config.include_hidden and file_path.name.startswith('.'):
             return True
         
-        except Exception as e:
-            error_msg = f"Could not {'record' if self.dry_run else 'move'} error file {file_path}: {e}"
-            self.error_logger.error(error_msg)
-            return False
-    
-    def process(self) -> List[Dict[str, Any]]:
-        """
-        Process all files and collect metadata
+        # Check if file extension should be excluded
+        if file_path.suffix.lower() in self.config.exclude_extensions:
+            return True
         
-        Returns:
-            List of metadata dictionaries for all files
-        """
-        print("Stage 1: File Enumeration and Metadata Collection")
-        print("=" * 60)
-        print(f"Mode: {'DRY RUN (no files will be moved)' if self.dry_run else 'REAL MODE (files will be moved)'}")
-        print(f"Source directory: {self.config.get_source_directory()}")
-        print(f"Destination directory: {self.config.get_destination_directory()}")
-        print(f"Cache directory: {self.cache_dir.absolute()}")
-        print(f"Error files directory: {self.error_files_dir.absolute()}")
-        print(f"Plan file: {self.plan_file.absolute()}")
-        print(f"Error log: {self.cache_dir / 'errors.log'}")
-        print()
-        
-        # Try to resume from cache
-        resumed = False
-        if self.config.should_resume_from_cache():
-            resumed = self._load_cache()
-            if resumed:
-                print()
-        
-        # Get all files
-        print("Enumerating files...")
-        files = self.file_enumerator.get_files_list()
-        total_files = len(files)
-        
-        print(f"Found {total_files} files to process")
-        if resumed:
-            remaining = total_files - len(self.processed_files)
-            print(f"Resuming: {len(self.processed_files)} already processed, {remaining} remaining")
-        print()
-        
-        # Process each file
-        print("Extracting metadata...")
-        
-        max_file_size = self.config.get_max_file_size()
-        cache_interval = self.config.get_cache_interval()
-        skipped_count = 0
-        files_since_cache = 0
-        
-        for file_path in tqdm(files, desc="Processing files", unit="file"):
+        # Check file size limit
+        if self.config.max_file_size > 0:
             try:
-                # Skip if already processed (from cache)
-                file_path_str = str(file_path.absolute())
-                if file_path_str in self.processed_files:
-                    continue
-                
-                # Check file size limit
-                if max_file_size > 0 and file_path.stat().st_size > max_file_size:
-                    skipped_count += 1
-                    self.processed_files.add(file_path_str)
-                    continue
-                
-                # Extract metadata with stderr suppression
-                # Suppress stderr to prevent library errors from appearing in console
-                stderr_capture = io.StringIO()
-                try:
-                    with contextlib.redirect_stderr(stderr_capture):
-                        file_metadata = self.metadata_extractor.extract_all_metadata(
-                            file_path=file_path,
-                            extract_exif=self.config.should_extract_exif(),
-                            extract_audio=self.config.should_extract_audio_metadata(),
-                            extract_video=self.config.should_extract_video_metadata(),
-                            extract_document=self.config.should_extract_document_metadata()
-                        )
-                    
-                    # Check if any stderr output was captured (indicates library errors)
-                    stderr_output = stderr_capture.getvalue()
-                    if stderr_output and ('error' in stderr_output.lower() or 'invalid' in stderr_output.lower()):
-                        # Library had errors - treat as failed
-                        raise Exception(f"Library error: {stderr_output.strip()[:200]}")  # Limit error message length
-                    elif stderr_output:
-                        # Just warnings - log but don't fail
-                        self.error_logger.error(f"Library warnings for {file_path.name}:")
-                        self.error_logger.error(f"  {stderr_output.strip()[:500]}")
-                    
-                    self.results.append(file_metadata.to_dict())
-                    self.processed_files.add(file_path_str)
-                    files_since_cache += 1
-                    
-                    # Save cache periodically
-                    if files_since_cache >= cache_interval:
-                        self._save_cache()
-                        files_since_cache = 0
-                
-                except KeyboardInterrupt:
-                    raise
-                
-                except Exception as e:
-                    # This catches all extraction errors
-                    self.error_count += 1
-                    error_msg = str(e)
-                    
-                    # Get stderr output if any
-                    stderr_output = stderr_capture.getvalue()
-                    if stderr_output:
-                        error_msg = f"{error_msg}\nLibrary output: {stderr_output.strip()}"
-                    
-                    # Get relative path for clearer output
-                    try:
-                        source_dir = Path(self.config.get_source_directory())
-                        relative_path = file_path.relative_to(source_dir)
-                        display_path = str(relative_path)
-                    except:
-                        display_path = str(file_path)
-                    
-                    # Log error to file
-                    self.error_logger.error(f"Error processing file: {display_path}")
-                    self.error_logger.error(f"  Full path: {file_path.absolute()}")
-                    self.error_logger.error(f"  Error: {error_msg}")
-                    
-                    # Move/record the problematic file
-                    if self._move_error_file(file_path, error_msg):
-                        error_dest = self.error_files_dir / Path(display_path)
-                        action = "Recorded in plan" if self.dry_run else f"Moved to {error_dest}"
-                        self.error_logger.error(f"  Action: {action}")
-                        
-                        # Save plan immediately after adding error operation
-                        self.plan.save(self.plan_file)
-                    
-                    # Mark as processed to avoid retrying
-                    # IMPORTANT: Do NOT add to results - file had an error
-                    self.processed_files.add(file_path_str)
-                    files_since_cache += 1
-                    
-                    # Save cache after error to ensure we don't retry this file
-                    if files_since_cache >= cache_interval:
-                        self._save_cache()
-                        files_since_cache = 0
-            
-            except KeyboardInterrupt:
-                # Allow user to interrupt
-                print("\n\nProcess interrupted by user")
-                raise
-            
-            except Exception as outer_e:
-                # Catch-all for unexpected errors in the outer loop
-                print(f"\nUnexpected error in processing loop: {outer_e}", file=sys.stderr)
-                self.error_logger.error(f"Unexpected outer loop error: {outer_e}")
+                if file_path.stat().st_size > self.config.max_file_size:
+                    logger.info(f"Excluding file due to size limit: {file_path}")
+                    return True
+            except OSError as e:
+                logger.warning(f"Cannot stat file {file_path}: {e}")
+                return True
         
-        # Final cache save
-        if files_since_cache > 0:
-            self._save_cache()
-        
-        # Save the plan
-        self.plan.mark_stage_complete('stage1')
-        self.plan.save(self.plan_file)
-        
-        # Close error logger
-        if self.error_logger:
-            self.error_logger.error("=" * 60)
-            self.error_logger.error("Stage 1 Session Completed")
-            self.error_logger.error("=" * 60)
-            for handler in self.error_logger.handlers:
-                handler.close()
-        
-        print()
-        print("=" * 60)
-        print(f"Processing complete!")
-        print(f"Total files found: {total_files}")
-        print(f"Successfully processed: {len(self.results)}")
-        if skipped_count > 0:
-            print(f"Skipped (size limit): {skipped_count}")
-        if self.error_count > 0:
-            action = "recorded in plan" if self.dry_run else f"moved to {self.error_files_dir}"
-            print(f"Errors ({action}): {self.error_count}")
-            print(f"  See error details in: {self.cache_dir / 'errors.log'}")
-            if self.dry_run:
-                print(f"  These errors have been added to the plan file")
-        print()
-        
-        return self.results
+        return False
     
-    def save_results(self, output_file: str = None):
+    def _should_exclude_dir(self, dir_path: Path) -> bool:
         """
-        Save results to JSON file
+        Check if a directory should be excluded based on configuration.
         
         Args:
-            output_file: Output file path (uses config if not specified)
-        """
-        if output_file is None:
-            output_file = self.config.get_stage1_output_file()
-        
-        output_path = Path(output_file)
-        
-        # If output path is relative, place it in the cache directory
-        if not output_path.is_absolute():
-            output_path = self.cache_dir / output_path
-        
-        # Create output directory if it doesn't exist
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Prepare output data
-        output_data = {
-            'stage': 1,
-            'description': 'File enumeration and metadata collection',
-            'source_directory': self.config.get_source_directory(),
-            'destination_directory': self.config.get_destination_directory(),
-            'total_files': len(self.results),
-            'files': self.results
-        }
-        
-        # Save to JSON file
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(output_data, f, indent=2, default=str)
-        
-        print(f"Results saved to: {output_path.absolute()}")
-        
-        # Clear cache after successful completion
-        self._clear_cache()
-        
-        # Print plan summary
-        print()
-        print("Plan Summary:")
-        plan_summary = self.plan.get_summary()
-        print(f"  Total operations planned: {plan_summary['total_operations']}")
-        
-        # Debug: Check if operations exist
-        if hasattr(self.plan, 'operations'):
-            print(f"  Debug: Plan has {len(self.plan.operations)} operation objects")
-        
-        if plan_summary['total_operations'] > 0:
-            for op_type, count in plan_summary.get('by_type', {}).items():
-                print(f"    {op_type}: {count}")
-            print(f"  Plan saved to: {self.plan_file.absolute()}")
+            dir_path: Path to the directory
             
-            # If there are error operations, show details
-            if 'error' in plan_summary.get('by_type', {}):
-                print()
-                error_count = plan_summary['by_type']['error']
-                print(f"  ⚠ {error_count} file(s) with errors will be moved to error directory when plan is executed:")
-                error_ops = self.plan.get_error_operations_summary()
-                for i, op in enumerate(error_ops[:5], 1):  # Show first 5
-                    source_path = Path(op['source'])
-                    print(f"    {i}. {source_path.name}")
-                if len(error_ops) > 5:
-                    print(f"    ... and {len(error_ops) - 5} more (see plan file for full list)")
-                print()
-                print(f"  Set dry_run: false in config to execute these operations")
-        else:
-            print(f"  No operations to execute")
+        Returns:
+            True if directory should be excluded, False otherwise
+        """
+        # Check if hidden directory should be excluded
+        if not self.config.include_hidden and dir_path.name.startswith('.'):
+            return True
         
-        # Print statistics
-        total_size = sum(file['file_size'] for file in self.results)
-        total_size_human = MetadataExtractor._human_readable_size(total_size)
+        # Check if directory is in exclude list
+        if dir_path.name in self.config.exclude_dirs:
+            return True
         
-        print()
-        print("Statistics:")
-        print(f"  Total files: {len(self.results)}")
-        print(f"  Total size: {total_size_human}")
-        
-        # Count by media type
-        media_types = {}
-        for file in self.results:
-            media_type = file.get('media_type', 'unknown')
-            media_types[media_type] = media_types.get(media_type, 0) + 1
-        
-        if media_types:
-            print()
-            print("Files by media type:")
-            for media_type, count in sorted(media_types.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {media_type or 'unknown'}: {count}")
+        return False
     
-    def run(self):
-        """Run the complete Stage 1 process"""
+    def _get_mime_type(self, file_path: Path) -> str:
+        """
+        Get the MIME type of a file.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            MIME type string
+        """
         try:
-            self.initialize()
-            self.process()
-            self.save_results()
+            return self.mime.from_file(str(file_path))
         except Exception as e:
-            error_msg = f"Error during Stage 1 processing: {e}"
-            print(error_msg, file=sys.stderr)
-            if self.error_logger:
-                self.error_logger.error(error_msg)
-                self.error_logger.error("=" * 60)
-                self.error_logger.error("Stage 1 Session Failed")
-                self.error_logger.error("=" * 60)
-            raise
-
-
-def main():
-    """Main entry point for Stage 1"""
-    import argparse
+            logger.warning(f"Could not determine MIME type for {file_path}: {e}")
+            return "application/octet-stream"
     
-    parser = argparse.ArgumentParser(
-        description='Airganizer Stage 1: File Enumeration and Metadata Collection'
-    )
-    parser.add_argument(
-        '--config',
-        '-c',
-        default='config.yaml',
-        help='Path to configuration file (default: config.yaml)'
-    )
-    parser.add_argument(
-        '--output',
-        '-o',
-        help='Output file path (overrides config)'
-    )
+    def _scan_file(self, file_path: Path, result: Stage1Result) -> None:
+        """
+        Scan a single file and add it to results with metadata.
+        Uses cache if available and valid.
+        
+        Args:
+            file_path: Path to the file
+            result: Stage1Result object to add the file to
+        """
+        try:
+            if self._should_exclude_file(file_path):
+                logger.debug(f"Excluding file: {file_path}")
+                return
+            
+            # Try to get from cache first
+            file_info = self.cache_manager.get_stage1_file_cache(str(file_path.absolute()))
+            
+            if file_info:
+                # Cache hit - use cached data
+                result.add_file(file_info)
+                logger.debug(f"Loaded from cache: {file_path}")
+                return
+            
+            # Cache miss - process file
+            logger.debug(f"Processing file: {file_path}")
+            
+            # Get basic file information
+            file_size = file_path.stat().st_size
+            mime_type = self._get_mime_type(file_path)
+            
+            # Extract EXIF data for image files
+            exif_data = {}
+            if mime_type.startswith('image/'):
+                logger.debug(f"Extracting EXIF data from {file_path}")
+                exif_data = extract_exif_data(file_path)
+            
+            # Extract metadata based on MIME type
+            logger.debug(f"Extracting metadata from {file_path}")
+            metadata = extract_metadata_by_mime(file_path, mime_type)
+            
+            # Run binwalk analysis
+            logger.debug(f"Running binwalk on {file_path}")
+            binwalk_output = run_binwalk(file_path)
+            
+            # Create FileInfo object with all metadata
+            file_info = FileInfo(
+                file_name=file_path.name,
+                file_path=str(file_path.absolute()),
+                mime_type=mime_type,
+                file_size=file_size,
+                exif_data=exif_data,
+                binwalk_output=binwalk_output,
+                metadata=metadata
+            )
+            
+            # Save to cache
+            self.cache_manager.save_stage1_file_cache(file_info)
+            
+            result.add_file(file_info)
+            logger.debug(f"Added file: {file_path} (MIME: {mime_type})")
+            
+        except Exception as e:
+            error_msg = f"Error processing file: {e}"
+            logger.error(f"{error_msg} - {file_path}")
+            result.add_error(str(file_path), error_msg)
     
-    args = parser.parse_args()
+    def _scan_directory_recursive(self, directory: Path, result: Stage1Result) -> None:
+        """
+        Recursively scan a directory and collect file information.
+        
+        Args:
+            directory: Directory path to scan
+            result: Stage1Result object to add files to
+        """
+        try:
+            for item in directory.iterdir():
+                # Handle symbolic links
+                if item.is_symlink() and not self.config.follow_symlinks:
+                    logger.debug(f"Skipping symlink: {item}")
+                    continue
+                
+                if item.is_file():
+                    self._scan_file(item, result)
+                elif item.is_dir():
+                    if self._should_exclude_dir(item):
+                        logger.debug(f"Excluding directory: {item}")
+                        continue
+                    
+                    if self.config.recursive:
+                        self._scan_directory_recursive(item, result)
+                        
+        except PermissionError as e:
+            error_msg = f"Permission denied: {e}"
+            logger.warning(f"{error_msg} - {directory}")
+            result.add_error(str(directory), error_msg)
+        except Exception as e:
+            error_msg = f"Error scanning directory: {e}"
+            logger.error(f"{error_msg} - {directory}")
+            result.add_error(str(directory), error_msg)
     
-    # Load configuration
-    try:
-        config = Config(args.config)
-    except FileNotFoundError:
-        print(f"Error: Configuration file not found: {args.config}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error loading configuration: {e}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Run Stage 1
-    processor = Stage1Processor(config)
-    
-    try:
-        processor.initialize()
-        processor.process()
-        processor.save_results(args.output)
-    except KeyboardInterrupt:
-        print("\nProcessing interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-if __name__ == '__main__':
-    main()
+    def scan(self, source_directory: str, use_cache: bool = True) -> Stage1Result:
+        """
+        Scan the source directory and collect file information with metadata.
+        
+        Args:
+            source_directory: Path to the source directory
+            use_cache: Whether to use cached results if available
+            
+        Returns:
+            Stage1Result object containing all collected file information,
+            unique MIME types, and extracted metadata (EXIF, binwalk, etc.)
+        """
+        source_path = Path(source_directory).resolve()
+        
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source directory not found: {source_directory}")
+        
+        if not source_path.is_dir():
+            raise NotADirectoryError(f"Source path is not a directory: {source_directory}")
+        
+        # Try to load complete result from cache first
+        if use_cache:
+            cached_result = self.cache_manager.get_stage1_result_cache(str(source_path))
+            if cached_result:
+                logger.info(f"Loaded complete Stage 1 result from cache")
+                logger.info(f"  Files: {cached_result.total_files}")
+                logger.info(f"  MIME types: {len(cached_result.unique_mime_types)}")
+                return cached_result
+        
+        logger.info(f"Starting Stage 1: File enumeration and metadata collection")
+        logger.info(f"Scanning directory: {source_path}")
+        if use_cache:
+            logger.info(f"Cache enabled: Will use cached file data where available")
+        
+        # Initialize result object
+        result = Stage1Result(
+            source_directory=str(source_path),
+            total_files=0,
+            files=[],
+            errors=[]
+        )
+        
+        # Scan the directory for files and collect metadata
+        self._scan_directory_recursive(source_path, result)
+        
+        logger.info(f"File scanning complete: Found {result.total_files} files")
+        if result.errors:
+            logger.warning(f"Encountered {len(result.errors)} errors during scanning")
+        
+        # Extract unique MIME types
+        logger.info("Extracting unique MIME types")
+        result.extract_unique_mime_types()
+        logger.info(f"Found {len(result.unique_mime_types)} unique MIME types")
+        
+        # Save complete result to cache
+        if use_cache:
+            self.cache_manager.save_stage1_result_cache(result)
+        
+        logger.info("=" * 60)
+        logger.info("Stage 1 complete!")
+        logger.info(f"  Files: {result.total_files}")
+        logger.info(f"  MIME types: {len(result.unique_mime_types)}")
+        logger.info(f"  Errors: {len(result.errors)}")
+        logger.info("=" * 60)
+        
+        return result

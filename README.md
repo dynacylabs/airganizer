@@ -1,319 +1,376 @@
-# Airganizer
+# AI File Organizer
 
-AI-powered file sorting utility that helps you organize files intelligently.
+An AI-powered file organizer that automatically scans, analyzes, and organizes files in your directories using intelligent AI model selection.
+
+## Features
+
+### Stage 1: File Scanning and Enumeration
+- Recursively scan source directories
+- Collect comprehensive file information:
+  - File name
+  - Full file path
+  - MIME type detection
+  - File size
+- Extract unique MIME types from all scanned files
+- **AI Model Discovery** with three methods:
+  - **Method 1 (Config)**: Use predefined models from configuration file
+  - **Method 2 (Local Enumerate)**: Automatically discover local AI models
+  - **Method 3 (Local Download)**: Discover and download models as needed
+- **Intelligent MIME-to-Model Mapping**: AI-powered recommendations for which model should analyze each file type
+- **Automatic Model Download**: Downloads required models based on mapping (local_download mode)
+- **Connectivity Verification**: Tests all models (local and online) to ensure readiness
+- Support for both online (OpenAI, Anthropic) and local (Ollama) AI models
+- Configurable exclusion rules for files and directories
+- Hidden file handling
+- Symbolic link support
+- Error tracking and reporting
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd airganizer
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Install system dependencies:
+```bash
+# Ubuntu/Debian
+sudo apt-get install libmagic1
+
+# For local AI models (optional but recommended)
+# Install Ollama from https://ollama.ai
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+## Configuration
+
+The configuration file (YAML format) allows you to customize all aspects of the file organizer. See [config.example.yaml](config.example.yaml) for a complete example.
+
+**📚 For detailed configuration documentation, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)**
+
+**⚡ Quick reference: [docs/CONFIG_QUICKREF.md](docs/CONFIG_QUICKREF.md)**
+
+### New Configuration Features
+
+#### Centralized Credentials
+Specify API keys **once per provider** instead of per model:
+```yaml
+models:
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+  anthropic:
+    api_key_env: "ANTHROPIC_API_KEY"
+```
+
+#### Model Mode Selection
+Control which types of models to use:
+- `online_only`: Use only OpenAI/Anthropic models
+- `local_only`: Use only Ollama/local models
+- `mixed`: Use both online and local models (default)
+
+```yaml
+models:
+  model_mode: "mixed"  # online_only, local_only, or mixed
+```
+
+#### Automatic Model Discovery
+Automatically enumerate available models from providers:
+```yaml
+models:
+  discovery_method: "auto"
+  
+  openai:
+    auto_enumerate: true
+  
+  anthropic:
+    auto_enumerate: true
+  
+  ollama:
+    auto_enumerate: true
+```
+
+### Key Configuration Sections
+
+#### General Settings
+- `log_level`: Logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `max_file_size`: Maximum file size to process in MB (0 = no limit)
+- `exclude_extensions`: List of file extensions to exclude
+- `exclude_dirs`: List of directory names to exclude
+
+#### Stage 1 Settings
+- `recursive`: Enable recursive directory scanning
+- `follow_symlinks`: Follow symbolic links
+- `include_hidden`: Include hidden files (files starting with .)
+
+#### AI Model Configuration
+- `model_mode`: Control which model types to use (`online_only`, `local_only`, `mixed`)
+- `discovery_method`: How to discover models (`auto`, `config`, `local_enumerate`, `local_download`)
+- `local_provider`: Local AI provider (`ollama`, `llamacpp`, `transformers`)
+- Provider-specific configurations for `openai`, `anthropic`, and `ollama`
+- `mapping_model`: AI model used to create MIME-to-model mappings
+
+### Model Discovery Methods
+
+**Auto-Discovery (Recommended - Zero Configuration)**
+```yaml
+models:
+  model_mode: "mixed"
+  discovery_method: "auto"
+  
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+    auto_enumerate: true
+  
+  anthropic:
+    api_key_env: "ANTHROPIC_API_KEY"
+    auto_enumerate: true
+  
+  ollama:
+    auto_enumerate: true
+```
+
+**Config-based (Manual Control)**
+```yaml
+models:
+  discovery_method: "config"
+  
+  openai:
+    auto_enumerate: false
+    models:
+      - "gpt-4o"
+      - "gpt-4-turbo"
+  
+  anthropic:
+    auto_enumerate: false
+    models:
+      - "claude-3-5-sonnet-20241022"
+```
+
+**Local Enumerate (Offline Use)**
+```yaml
+models:
+  model_mode: "local_only"
+  discovery_method: "local_enumerate"
+  
+  ollama:
+    base_url: "http://localhost:11434"
+```
+
+**Local Download (Auto-Setup)**
+```yaml
+models:
+  model_mode: "local_only"
+  discovery_method: "local_download"
+  
+  ollama:
+    auto_download_models:
+      - "llama3.2-vision:latest"
+      - "llava:latest"
+```
+
+Note: This method will also download any additional models required by the MIME-to-model mapping that aren't already installed.
+
+## Usage
+
+### Basic Usage
+
+```bash
+python main.py --config config.example.yaml --src /path/to/source --dst /path/to/destination
+```
+
+### Command Line Arguments
+
+- `--config`: Path to the configuration file (YAML format) - **Required**
+- `--src`: Source directory to scan for files - **Required**
+- `--dst`: Destination directory for organized files - **Required**
+- `--output`: Path to save Stage 1 results as JSON (optional)
+- `--verbose`: Enable verbose output (DEBUG level logging)
+
+### Examples
+
+**With online AI models:**
+```bash
+# Set API keys
+export OPENAI_API_KEY="your-api-key"
+export ANTHROPIC_API_KEY="your-api-key"
+
+# Run the organizer
+python main.py \
+  --config config.example.yaml \
+  --src /home/user/Documents \
+  --dst /home/user/Organized \
+  --output stage1_results.json \
+  --verbose
+```
+
+**With local Ollama models:**
+```bash
+# Make sure Ollama is running
+ollama serve
+
+# Run the organizer with local models only
+python main.py \
+  --config config.example.yaml \
+  --src /home/user/Documents \
+  --dst /home/user/Organized
+```
 
 ## Project Structure
 
 ```
 airganizer/
+├── main.py                      # Main entry point
+├── requirements.txt             # Python dependencies
+├── config.example.yaml          # Example configuration file
 ├── src/
-│   ├── __init__.py           # Package initialization
-│   ├── config.py             # Configuration management
-│   ├── file_enumerator.py    # File enumeration logic
-│   ├── metadata_extractor.py # Metadata extraction
-│   └── stage1.py             # Stage 1 processor
-├── config.yaml               # Configuration file
-├── airganizer.py             # Main entry point
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+│   ├── __init__.py
+│   ├── config.py               # Configuration handler
+│   ├── models.py               # Data models (FileInfo, ModelInfo, Stage1Result)
+│   ├── stage1.py               # Stage 1 implementation
+│   ├── model_discovery.py      # AI model discovery system
+│   └── mime_mapper.py          # MIME-to-model mapping with AI
+├── test_data/                  # Test files
+└── README.md
 ```
 
-## Stage 1: File Enumeration and Metadata Collection
+## Stage 1 Output
 
-Stage 1 scans a source directory recursively and collects comprehensive metadata for each file.
+Stage 1 produces a comprehensive `Stage1Result` object containing:
 
-### Features
+1. **File Information**: All scanned files with metadata
+2. **Unique MIME Types**: List of all unique MIME types found
+3. **Available Models**: List of discovered AI models with capabilities
+4. **MIME-to-Model Mapping**: AI-recommended mapping of which model should analyze each file type
 
-- **Recursive directory scanning** with include/exclude pattern support
-- **Basic file metadata**: name, path, size, timestamps
-- **MIME type detection**
-- **File hash calculation** (optional, MD5)
-- **Image EXIF data** extraction (for JPEG, PNG, etc.)
-- **Audio metadata** extraction (MP3, FLAC, OGG, etc.)
-- **Video metadata** extraction (MP4, AVI, MKV, etc.)
-- **Document metadata** extraction (PDF, DOCX, XLSX, PPTX)
-
-### Metadata Collected
-
-For all files:
-- File name and path
-- File size (bytes and human-readable)
-- File extension
-- Creation, modification, and access times
-- MIME type and media type
-
-Additional metadata by file type:
-- **Images**: EXIF data (camera info, GPS, dimensions, etc.)
-- **Audio**: Duration, bitrate, sample rate, channels, tags (artist, album, etc.)
-- **Video**: Duration, codec, resolution, frame rate, audio tracks
-- **Documents**: Author, creation/modification dates, page/slide count, etc.
-
-## Installation
-
-1. **Clone or create the project directory**
-
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure the utility** by editing `config.yaml`:
-   ```yaml
-   source:
-     directory: "/path/to/your/files"
-   
-   destination:
-     directory: "/path/to/organized/files"
-   ```
-
-## Configuration
-
-Edit `config.yaml` to customize the behavior:
-
-### Global Settings
-- `global.dry_run`: Run in dry run mode (default: `true`)
-  - **true**: Build a plan without moving/modifying files - each stage updates the plan
-  - **false**: Execute the plan (only use in final stage when ready to move files)
-  - In dry run mode, operations are recorded in the plan file for review
-
-### Cache Configuration
-- `cache.directory`: Directory for cache and temporary files (default: `.airganizer_cache`)
-  - Used to store progress for resumability if the process is interrupted
-  - All generated files (output, cache) are placed here by default
-  - Error log (`errors.log`) is stored here
-- `cache.error_files_directory`: Directory for files that had processing errors (default: `.airganizer_cache/error_files`)
-  - Files that cause errors are automatically moved here and excluded from further processing
-
-### Source Configuration
-- `source.directory`: Directory to scan
-- `source.include`: Glob patterns for files to include (default: `["*"]`)
-- `source.exclude`: Glob patterns for files to exclude (e.g., `[".*", "*.tmp"]`)
-
-### Destination Configuration
-- `destination.directory`: Where organized files will be placed (used in later stages)
-
-### Metadata Extraction
-- `metadata.extract_exif`: Extract EXIF data from images (default: `true`)
-- `metadata.extract_audio_metadata`: Extract audio metadata (default: `true`)
-- `metadata.extract_video_metadata`: Extract video metadata (default: `true`)
-- `metadata.extract_document_metadata`: Extract document metadata (default: `true`)
-
-### Stage 1 Options
-- `stage1.output_file`: Output JSON file name (default: `stage1_metadata.json`)
-  - Relative paths are placed in the cache directory
-  - Use absolute paths to place output elsewhere
-- `stage1.plan_file`: Plan file for file operations (default: `airganizer_plan.json`)
-  - Tracks all planned file moves, renames, and operations
-  - Updated by each stage, executed in final stage
-- `stage1.calculate_hash`: Calculate MD5 hash for each file (default: `false`)
-- `stage1.max_file_size`: Maximum file size to process in MB, 0 = no limit (default: `0`)
-- `stage1.cache_interval`: Save progress every N files (default: `100`)
-- `stage1.resume_from_cache`: Resume from cache if available (default: `true`)
-
-## Usage
-
-### Run Stage 1
-
-```bash
-python airganizer.py
-```
-
-Or with custom config:
-
-```bash
-python airganizer.py --config /path/to/config.yaml
-```
-
-Or with custom output file:
-
-```bash
-python airganizer.py --output /path/to/output.json
-```
-
-### Output
-
-Stage 1 produces a JSON file (`file_metadata.json` by default) containing:
-
+Example output structure:
 ```json
 {
-  "stage": 1,
-  "description": "File enumeration and metadata collection",
   "source_directory": "/path/to/source",
-  "destination_directory": "/path/to/destination",
-  "total_files": 1234,
+  "total_files": 42,
   "files": [
     {
-      "file_name": "photo.jpg",
-      "file_path": "/path/to/source/photos/photo.jpg",
-      "file_extension": ".jpg",
-      "file_size": 2048576,
-      "file_size_human": "1.95 MB",
-      "created_time": "2024-01-15T10:30:00",
-      "modified_time": "2024-01-15T10:30:00",
-      "accessed_time": "2024-01-16T08:00:00",
-      "mime_type": "image/jpeg",
-      "encoding": null,
-      "media_type": "image",
-      "exif": {
-        "Make": "Canon",
-        "Model": "EOS 5D Mark IV",
-        "DateTime": "2024:01:15 10:30:00",
-        "width": 6720,
-        "height": 4480,
-        "format": "JPEG"
-      }
+      "file_name": "document.pdf",
+      "file_path": "/path/to/source/document.pdf",
+      "mime_type": "application/pdf",
+      "file_size": 1024000
     }
-  ]
+  ],
+  "unique_mime_types": [
+    "application/pdf",
+    "image/jpeg",
+    "text/plain"
+  ],
+  "available_models": [
+    {
+      "name": "gpt-4-vision",
+      "type": "online",
+      "provider": "openai",
+      "model_name": "gpt-4-vision-preview",
+      "capabilities": ["text", "image"]
+    }
+  ],
+  "mime_to_model_mapping": {
+    "application/pdf": "gpt-4",
+    "image/jpeg": "gpt-4-vision",
+    "text/plain": "llama3.2"
+  },
+  "model_connectivity": {
+    "gpt-4": true,
+    "gpt-4-vision": true,
+    "llama3.2": true
+  }
 }
 ```
 
-The tool also prints statistics including:
-- Total files processed
-- Total size of all files
-- Breakdown by media type
+## Development Status
 
-### Resumability
+**Completed:**
+- ✅ Stage 1: File scanning and enumeration
 
-Stage 1 automatically saves progress to a cache file (in `.airganizer_cache/` by default) every 100 files. If the process is interrupted:
+**Planned:**
+- ⏳ Stage 2: AI-powered file analysis and categorization
+- ⏳ Stage 3: File organization and moving
+- ⏳ Additional features and optimizations
 
-1. **Automatic Resume**: Simply run the command again - it will automatically detect the cache and resume from where it left off
-2. **Manual Cache Control**: 
-   - Set `cache.directory` in config to change cache location
-   - Set `stage1.cache_interval` to change how often progress is saved
-   - Set `stage1.resume_from_cache: false` to start fresh (ignoring cache)
-3. **Cache Cleanup**: The cache is automatically deleted after successful completion
+## Requirements
 
-### Error Handling
+- Python 3.7+
+- python-magic
+- PyYAML
+- requests
+- openai (for OpenAI models)
+- anthropic (for Anthropic models)
+- libmagic1 (system library)
 
-**Error Logging:**
-- All errors are logged to `errors.log` in the cache directory
-- Console output is kept clean - errors don't clutter the terminal
-- Each error includes: timestamp, file path, error message, and action taken
-- Review the error log after processing: `cat .airganizer_cache/errors.log`
+## Testing
 
-**Error File Handling:**
-
-If Stage 1 encounters an error processing a file:
-
-**In Dry Run Mode (default):**
-1. **Recorded in Plan**: The problematic file and error are recorded in the plan file
-2. **Logged to File**: Error details are written to `errors.log`
-3. **No Files Moved**: The original file remains in place
-4. **Excluded from Metadata**: File is NOT included in the output metadata
-5. **Available for Review**: You can review all errors in the plan and log files
-6. **Processing Continues**: The error doesn't stop the entire process
-
-**In Real Mode (dry_run: false):**
-1. **File is Moved**: The problematic file is automatically moved to the error files directory
-2. **Logged to File**: Error details are written to `errors.log`
-3. **Directory Structure Preserved**: The relative path from the source directory is preserved
-4. **Error Log Created**: An `.error.txt` file is created alongside the moved file with details
-5. **Excluded from Metadata**: File is NOT included in the output metadata
-6. **Excluded from Processing**: The file is marked as processed and won't be retried on resume
-7. **Processing Continues**: The error doesn't stop the entire process
-
-### The Plan File
-
-Airganizer operates by building a **plan** of operations across stages:
-
-1. **Stage 1**: Enumerates files, records errors in plan
-2. **Future Stages**: Will add categorization and organization decisions to the plan
-3. **Final Stage**: Executes the plan (set `dry_run: false`)
-
-The plan file (`airganizer_plan.json`) contains:
-- All file operations to be performed (moves, renames, etc.)
-- Reasons for each operation
-- File metadata
-- Timestamps and stage completion status
-
-**Review the plan before execution:**
+Run the test script to verify Stage 1 functionality:
 ```bash
-cat .airganizer_cache/airganizer_plan.json
+python test_stage1.py
 ```
 
-## Dependencies
+This will:
+1. Load the configuration
+2. Scan the test_data directory
+3. Display all discovered files and MIME types
+4. Show available AI models
+5. Display the AI-generated MIME-to-model mapping
 
-### Core
-- **PyYAML**: Configuration file parsing
-- **tqdm**: Progress bars
+## How It Works
 
-### Optional (for enhanced metadata extraction)
-- **Pillow**: Image EXIF data
-- **mutagen**: Audio metadata
-- **pymediainfo**: Video metadata
-- **PyPDF2**: PDF metadata
-- **python-docx**: Word document metadata
-- **openpyxl**: Excel metadata
-- **python-pptx**: PowerPoint metadata
+### Stage 1 Workflow
 
-If optional dependencies are not installed, the tool will still work but skip the corresponding metadata extraction (with an error message in the output).
+1. **Configuration Loading**: Load settings from YAML config file
+2. **Directory Scanning**: Recursively scan source directory for files
+3. **File Analysis**: Collect metadata (name, path, MIME type, size) for each file
+4. **MIME Type Extraction**: Extract unique MIME types from all files
+5. **Model Discovery**: Discover available AI models based on configured method
+6. **AI-Powered Mapping**: Use AI to recommend which model should analyze each MIME type
+7. **Model Download**: Download required models (if in local_download mode)
+8. **Connectivity Verification**: Test all models to ensure they're accessible
+9. **Result Compilation**: Package all information into Stage1Result object
 
-## Example Workflow
+### MIME-to-Model Mapping
 
-1. **Edit configuration**:
-   ```yaml
-   global:
-     dry_run: true  # Keep true until final execution
-   
-   cache:
-     directory: ".airganizer_cache"
-     error_files_directory: ".airganizer_cache/error_files"
-   
-   source:
-     directory: "/home/user/Downloads"
-     exclude:
-       - ".*"
-       - "__pycache__"
-   
-   destination:
-     directory: "/home/user/OrganizedFiles"
-   
-   stage1:
-     output_file: "stage1_metadata.json"
-     plan_file: "airganizer_plan.json"
-     calculate_hash: false
-     cache_interval: 100
-     resume_from_cache: true
-   ```
+The system uses an AI "orchestrator" model to intelligently map file types to analysis models:
 
-2. **Run Stage 1**:
-   ```bash
-   python airganizer.py --config config.yaml
-   ```
-   
-   Or with default config file:
-   ```bash
-   python airganizer.py
-   ```
+- **Vision models** (e.g., GPT-4 Vision, LLaVA) for images and visual content
+- **Specialized models** for specific formats (PDFs, code files, etc.)
+- **General models** for text and other content
+- **Cost optimization** by preferring local models when appropriate
 
-3. **If interrupted, simply run again** - it will resume from the cache automatically!
+## Development Status
 
-3. **If interrupted, simply run again** - it will resume from the cache automatically!
+**Completed:**
+- ✅ Stage 1: File scanning and enumeration
+- ✅ MIME type detection and extraction
+- ✅ Multi-method AI model discovery
+- ✅ AI-powered MIME-to-model mapping
+- ✅ Support for online and local models
 
-4. **Review the output**:
-   ```bash
-   cat .airganizer_cache/stage1_metadata.json
-   ```
+**Planned:**
+- ⏳ Stage 2: AI-powered file analysis and categorization
+- ⏳ Stage 3: File organization and moving
+- ⏳ Additional features and optimizations
 
-5. **Review the plan**:
-   ```bash
-   cat .airganizer_cache/airganizer_plan.json
-   ```
-   
-   The plan shows all operations that will be performed when you execute it.
+## Documentation
 
-## Roadmap
-
-- ✅ **Stage 1**: File enumeration and metadata collection
-- ✅ **Dry Run Mode**: Build execution plan without moving files
-- 🔲 **Stage 2**: AI-powered file analysis and categorization
-- 🔲 **Stage 3**: Build organization strategy
-- 🔲 **Final Stage**: Execute the plan (actual file moves)
-
-## License
-
-[Add your license here]
+- **[QUICKSTART.md](QUICKSTART.md)** - Get started in 5 minutes
+- **[MODELS.md](MODELS.md)** - Complete AI model system documentation
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and data flow diagrams
+- **[STAGE1_SUMMARY.md](STAGE1_SUMMARY.md)** - Technical summary of Stage 1 deliverables
+- **[config.example.yaml](config.example.yaml)** - Full configuration example
 
 ## Contributing
 
-[Add contribution guidelines here]
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## License
+
+[License information to be added]

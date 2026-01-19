@@ -1,0 +1,43 @@
+# AI File Organizer - Test Configuration
+# This config uses default mapping without requiring AI API keys
+
+# General settings
+general:
+  log_level: INFO
+  max_file_size: 0
+  exclude_extensions: []
+  exclude_dirs: [".git", "__pycache__", "node_modules", ".venv"]
+
+# Stage 1 settings
+stage1:
+  recursive: true
+  follow_symlinks: false
+  include_hidden: false
+
+# AI Model configuration - Simple config-based method
+models:
+  discovery_method: "config"
+  local_provider: "ollama"
+  
+  # No mapping model configured - will use default heuristic mapping
+  mapping_model: null
+  
+  # Available models for file analysis
+  available_models:
+    # Simple local model setup (no API keys required)
+    - name: "local-text-model"
+      type: "local"
+      provider: "ollama"
+      model_name: "llama3.2:latest"
+      capabilities:
+        - "text"
+      description: "Local text analysis model"
+    
+    - name: "local-vision-model"
+      type: "local"
+      provider: "ollama"
+      model_name: "llava:latest"
+      capabilities:
+        - "text"
+        - "image"
+      description: "Local vision model for images"
