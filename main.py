@@ -12,7 +12,9 @@ from src.stage1 import Stage1Scanner
 from src.stage2 import Stage2Processor
 from src.stage3 import Stage3Processor
 from src.stage4 import Stage4Processor
+from src.stage5 import Stage5Processor
 from src.cache import CacheManager
+from src.progress import ProgressManager
 
 
 def setup_logging(log_level: str) -> None:
@@ -95,8 +97,8 @@ def parse_arguments() -> argparse.Namespace:
     
     parser.add_argument(
         '--clear-cache',
-        choices=['all', 'stage1', 'stage2'],
-        help='Clear cache before running (all/stage1/stage2)'
+        choices=['all', 'stage1', 'stage2', 'stage3', 'stage4', 'stage5'],
+        help='Clear cache before running (all/stage1/stage2/stage3/stage4/stage5)'
     )
     
     parser.add_argument(
@@ -145,8 +147,32 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--batch-size',
         type=int,
-        help='Batch size for Stage 4 taxonomy generation',
-        default=100
+        help='Batch size for Stage 4 taxonomy generation (overrides config)',
+        default=None
+    )
+    
+    parser.add_argument(
+        '--skip-stage5',
+        action='store_true',
+        help='Skip Stage 5 (physical file organization)'
+    )
+    
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Simulate file moves without actually moving files (Stage 5)'
+    )
+    
+    parser.add_argument(
+        '--overwrite',
+        action='store_true',
+        help='Overwrite existing files at destination (Stage 5)'
+    )
+    
+    parser.add_argument(
+        '--stage5-output',
+        help='Path to save Stage 5 move operations as JSON (optional)',
+        default=None
     )
     
     return parser.parse_args()
@@ -189,8 +215,7 @@ def main() -> int:
         
         cache_manager = CacheManager(
             cache_dir=cache_dir,
-            enabled=cache_enabled,
-            ttl_hours=config.cache_ttl_hours
+            enabled=cache_enabled
         )
         
         # Handle --cache-stats
@@ -202,9 +227,11 @@ def main() -> int:
             logger.info(f"Enabled: {stats['enabled']}")
             if stats['enabled']:
                 logger.info(f"Cache directory: {stats['cache_dir']}")
-                logger.info(f"TTL: {stats['ttl_hours']} hours")
                 logger.info(f"Stage 1 results: {stats['stage1_results']}")
                 logger.info(f"Stage 2 results: {stats['stage2_results']}")
+                logger.info(f"Stage 3 results: {stats.get('stage3_results', 0)}")
+                logger.info(f"Stage 4 results: {stats.get('stage4_results', 0)}")
+                logger.info(f"Stage 5 results: {stats.get('stage5_results', 0)}")
                 logger.info(f"File caches: {stats['file_caches']}")
                 logger.info(f"Total files: {stats['total_files']}")
                 logger.info(f"Total size: {stats['total_size_mb']} MB")
@@ -234,21 +261,28 @@ def main() -> int:
             logger.warning(f"Destination directory does not exist: {args.dst}")
             logger.info("Destination directory will be created when needed in later stages")
         
-        # Execute Stage 1: File enumeration and metadata collection
-        logger.info("=" * 60)
-        logger.info("STAGE 1: File Enumeration and Metadata Collection")
-        logger.info("=" * 60)
+        # Create progress manager (disabled if debug mode is on)
+        # Progress bars interfere with debug logging
+        progress_enabled = not args.debug
+        progress_manager = ProgressManager(total_stages=5, enabled=progress_enabled)
         
-        scanner = Stage1Scanner(config, cache_manager)
-        use_cache = cache_enabled
-        stage1_result = scanner.scan(args.src, use_cache=use_cache)
-        
-        # Display Stage 1 summary
-        logger.info("")
-        logger.info("STAGE 1 SUMMARY:")
-        logger.info(f"  Total files: {stage1_result.total_files}")
-        logger.info(f"  Unique MIME types: {len(stage1_result.unique_mime_types)}")
-        logger.info(f"  Errors: {len(stage1_result.errors)}")
+        # Execute the pipeline with progress tracking
+        with progress_manager:
+            # Execute Stage 1: File enumeration and metadata collection
+            logger.info("=" * 60)
+            logger.info("STAGE 1: File Enumeration and Metadata Collection")
+            logger.info("=" * 60)
+            
+            scanner = Stage1Scanner(config, cache_manager, progress_manager)
+            use_cache = cache_enabled
+            stage1_result = scanner.scan(args.src, use_cache=use_cache)
+            
+            # Display Stage 1 summary
+            logger.info("")
+            logger.info("STAGE 1 SUMMARY:")
+            logger.info(f"  Total files: {stage1_result.total_files}")
+            logger.info(f"  Unique MIME types: {len(stage1_result.unique_mime_types)}")
+            logger.info(f"  Errors: {len(stage1_result.errors)}")
         
         if stage1_result.total_files > 0:
             logger.info(f"\n  Sample files:")
@@ -273,7 +307,7 @@ def main() -> int:
         logger.info("STAGE 2: AI Model Discovery and Mapping")
         logger.info("=" * 60)
         
-        processor = Stage2Processor(config, cache_manager)
+        processor = Stage2Processor(config, cache_manager, progress_manager)
         stage2_result = processor.process(stage1_result, use_cache=use_cache)
         
         # Display Stage 2 summary
@@ -323,11 +357,13 @@ def main() -> int:
             logger.info("STAGE 3: AI-Powered File Analysis")
             logger.info("=" * 60)
             
-            stage3_processor = Stage3Processor(config, cache_manager)
+            stage3_processor = Stage3Processor(config, cache_manager, progress_manager)
+            # Use CLI arg if specified, otherwise use config default
+            max_files = args.max_files if args.max_files else config.stage3_max_files
             stage3_result = stage3_processor.process(
                 stage2_result,
                 use_cache=use_cache,
-                max_files=args.max_files
+                max_files=max_files
             )
             
             # Display Stage 3 summary
@@ -392,10 +428,12 @@ def main() -> int:
                 logger.info("STAGE 4: Taxonomic Structure Planning")
                 logger.info("=" * 60)
                 
-                stage4_processor = Stage4Processor(config)
+                stage3_processor = Stage3Processor(config, cache_manager, progress_manager)
+                # Use CLI arg if specified, otherwise use config default
+                batch_size = args.batch_size if args.batch_size else config.stage4_batch_size
                 stage4_result = stage4_processor.process(
                     stage3_result,
-                    batch_size=args.batch_size
+                    batch_size=batch_size
                 )
                 
                 # Display Stage 4 summary
@@ -450,28 +488,140 @@ def main() -> int:
                         json.dump(output_data, f, indent=2)
                     logger.info("Stage 4 results saved")
                 
-                # Update final summary
-                logger.info("")
-                logger.info("=" * 60)
-                logger.info("FINAL SUMMARY")
-                logger.info("=" * 60)
-                logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
-                logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
-                logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
-                logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
-                logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
-                logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
-                logger.info(f"Stage 4 - Categories created: {stage4_result.total_categories}")
-                logger.info(f"Stage 4 - Files assigned: {stage4_result.total_assigned}")
-                logger.info("=" * 60)
+                # Execute Stage 5: Physical file organization (unless skipped)
+                if not args.skip_stage5:
+                    logger.info("")
+                    logger.info("=" * 60)
+                    logger.info("STAGE 5: Physical File Organization")
+                    logger.info("=" * 60)
+                    
+                    stage5_processor = Stage5Processor(config, cache_manager, progress_manager)
+                    # Use CLI args if specified, otherwise use config defaults
+                    dry_run = args.dry_run if args.dry_run else config.stage5_dry_run
+                    overwrite = args.overwrite if args.overwrite else config.stage5_overwrite
+                    stage5_result = stage5_processor.process(
+                        stage4_result,
+                        destination_root=args.dst,
+                        dry_run=dry_run,
+                        overwrite=overwrite
+                    )
+                    
+                    # Display Stage 5 summary
+                    logger.info("")
+                    logger.info("STAGE 5 SUMMARY:")
+                    logger.info(f"  Total files processed: {stage5_result.total_files}")
+                    logger.info(f"  Organized files: {stage5_result.successful_moves}")
+                    logger.info(f"  Excluded files: {stage5_result.excluded_moves}")
+                    logger.info(f"  Error files: {stage5_result.error_moves}")
+                    logger.info(f"  Failed moves: {stage5_result.failed_moves}")
+                    logger.info(f"  Skipped moves: {stage5_result.skipped_moves}")
+                    
+                    if args.dry_run or dry_run:
+                        logger.info(f"\n  *** DRY-RUN MODE: No files were moved ***")
+                    else:
+                        logger.info(f"\n  *** All files moved from source directory ***")
+                    
+                    # Show sample organized moves
+                    organized_ops = [op for op in stage5_result.operations if op.success and op.category == "organized"]
+                    if organized_ops:
+                        logger.info(f"\n  Sample organized moves:")
+                        for op in organized_ops[:3]:
+                            logger.info(f"    {Path(op.source_path).name}")
+                            logger.info(f"      → {op.target_path}/{op.target_filename}")
+                    
+                    # Show excluded files info
+                    excluded_ops = [op for op in stage5_result.operations if op.category == "excluded"]
+                    if excluded_ops:
+                        logger.info(f"\n  Excluded files moved to _excluded/ ({len(excluded_ops)} files)")
+                        logger.info(f"    See _excluded/exclusions_log.json for details")
+                    
+                    # Show error files info
+                    error_ops = [op for op in stage5_result.operations if op.category == "error"]
+                    if error_ops:
+                        logger.info(f"\n  Error files moved to _errors/ ({len(error_ops)} files)")
+                        logger.info(f"    See _errors/errors_log.json for details")
+                    
+                    # Show all failures
+                    failed_ops = [op for op in stage5_result.operations if op.error and not op.success]
+                    if failed_ops:
+                        logger.warning(f"\n  Failed moves ({len(failed_ops)}):")
+                        for op in failed_ops:
+                            logger.warning(f"    {Path(op.source_path).name}")
+                            logger.warning(f"      Error: {op.error}")
+                    
+                    # Save Stage 5 results if requested
+                    if args.stage5_output:
+                        output_path = Path(args.stage5_output)
+                        logger.info(f"\nSaving Stage 5 results to: {output_path}")
+                        
+                        output_data = {
+                            'summary': {
+                                'source_directory': stage2_result.stage1_result.source_directory,
+                                'destination_directory': args.dst,
+                                'total_files': stage5_result.total_files,
+                                'successful_moves': stage5_result.successful_moves,
+                                'failed_moves': stage5_result.failed_moves,
+                                'skipped_moves': stage5_result.skipped_moves,
+                                'dry_run': stage5_result.dry_run
+                            },
+                            'operations': [op.to_dict() for op in stage5_result.operations]
+                        }
+                        
+                        with open(output_path, 'w') as f:
+                            json.dump(output_data, f, indent=2)
+                        logger.info("Stage 5 results saved")
+                    
+                    # Update final summary
+                    logger.info("")
+                    logger.info("=" * 60)
+                    logger.info("FINAL SUMMARY")
+                    logger.info("=" * 60)
+                    logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+                    logger.info(f"Stage 1 - Files excluded: {len(stage2_result.stage1_result.excluded_files)}")
+                    logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+                    logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+                    logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+                    logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
+                    logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
+                    logger.info(f"Stage 4 - Categories created: {stage4_result.total_categories}")
+                    logger.info(f"Stage 4 - Files assigned: {stage4_result.total_assigned}")
+                    logger.info(f"Stage 5 - Organized files: {stage5_result.successful_moves}")
+                    logger.info(f"Stage 5 - Excluded files: {stage5_result.excluded_moves}")
+                    logger.info(f"Stage 5 - Error files: {stage5_result.error_moves}")
+                    logger.info(f"Stage 5 - Move failures: {stage5_result.failed_moves}")
+                    logger.info("=" * 60)
+                    
+                    # Save complete results if requested (backward compatible)
+                    if args.output and not args.stage5_output:
+                        output_path = Path(args.output)
+                        logger.info(f"\nSaving complete results to: {output_path}")
+                        with open(output_path, 'w') as f:
+                            json.dump(stage5_result.to_dict(), f, indent=2)
+                        logger.info("Complete results saved")
                 
-                # Save complete results if requested (backward compatible)
-                if args.output and not args.stage4_output:
-                    output_path = Path(args.output)
-                    logger.info(f"\nSaving complete results to: {output_path}")
-                    with open(output_path, 'w') as f:
-                        json.dump(stage4_result.to_dict(), f, indent=2)
-                    logger.info("Complete results saved")
+                else:
+                    # Stage 5 skipped
+                    logger.info("")
+                    logger.info("=" * 60)
+                    logger.info("FINAL SUMMARY (Stage 5 skipped)")
+                    logger.info("=" * 60)
+                    logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
+                    logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
+                    logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
+                    logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
+                    logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
+                    logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
+                    logger.info(f"Stage 4 - Categories created: {stage4_result.total_categories}")
+                    logger.info(f"Stage 4 - Files assigned: {stage4_result.total_assigned}")
+                    logger.info("=" * 60)
+                    
+                    # Save complete results if requested (backward compatible)
+                    if args.output and not args.stage4_output:
+                        output_path = Path(args.output)
+                        logger.info(f"\nSaving complete results to: {output_path}")
+                        with open(output_path, 'w') as f:
+                            json.dump(stage4_result.to_dict(), f, indent=2)
+                        logger.info("Complete results saved")
             
             else:
                 # Stage 4 skipped

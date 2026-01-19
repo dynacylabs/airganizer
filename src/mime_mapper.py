@@ -141,7 +141,7 @@ Do not include any explanations or additional text. Only return the JSON mapping
                     {"role": "system", "content": "You are an expert AI system architect specializing in model selection for different file types."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=self.config.mapping_temperature,
                 response_format={"type": "json_object"}
             )
             
@@ -186,11 +186,11 @@ Do not include any explanations or additional text. Only return the JSON mapping
             
             response = client.messages.create(
                 model=self.mapping_model.model_name,
-                max_tokens=4096,
+                max_tokens=self.config.mapping_max_tokens,
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3
+                temperature=self.config.mapping_temperature
             )
             
             mapping_json = response.content[0].text
@@ -241,7 +241,7 @@ Do not include any explanations or additional text. Only return the JSON mapping
                     "stream": False,
                     "format": "json"
                 },
-                timeout=60
+                timeout=self.config.mapping_timeout
             )
             response.raise_for_status()
             

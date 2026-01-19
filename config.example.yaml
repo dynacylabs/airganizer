@@ -135,6 +135,40 @@ models:
         - "text"
       description: "Custom local model configuration"
 
-# Future stages can be configured here
-# stage2:
-#   ...
+# Stage 3 settings (AI File Analysis)
+stage3:
+  # Maximum number of files to analyze (0 = no limit, useful for testing)
+  max_files: 0
+  
+  # AI generation parameters for file analysis
+  ai:
+    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
+    max_tokens: 1000   # Maximum response length
+    timeout: 60        # API request timeout in seconds
+
+# Stage 4 settings (Taxonomic Structure Planning)
+stage4:
+  # Batch size for processing files (larger = more context, slower)
+  batch_size: 100
+  
+  # AI generation parameters for taxonomy creation
+  ai:
+    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
+    max_tokens: 4000  # Maximum response length (needs to be large for taxonomy)
+    timeout: 120      # API request timeout in seconds
+
+# Stage 5 settings (Physical File Organization)
+stage5:
+  # Overwrite existing files at destination
+  overwrite: false
+  
+  # Perform dry-run (simulate moves without actually moving files)
+  dry_run: false
+
+# AI Mapping settings (Stage 2 - MIME to Model mapping)
+mapping:
+  # AI generation parameters for MIME type mapping
+  ai:
+    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
+    max_tokens: 2000  # Maximum response length
+    timeout: 60       # API request timeout in seconds

@@ -229,8 +229,8 @@ Important:
         payload = {
             'model': model.model_name,
             'messages': messages,
-            'max_tokens': 500,
-            'temperature': 0.3
+            'max_tokens': self.config.stage3_max_tokens,
+            'temperature': self.config.stage3_temperature
         }
         
         try:
@@ -238,7 +238,7 @@ Important:
                 f'{base_url}/chat/completions',
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=self.config.stage3_timeout
             )
             response.raise_for_status()
             
@@ -308,7 +308,7 @@ Important:
         
         payload = {
             'model': model.model_name,
-            'max_tokens': 1024,
+            'max_tokens': self.config.stage3_max_tokens,
             'messages': [{
                 'role': 'user',
                 'content': content
@@ -320,7 +320,7 @@ Important:
                 f'{base_url}/v1/messages',
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=self.config.stage3_timeout
             )
             response.raise_for_status()
             
@@ -352,8 +352,8 @@ Important:
             'prompt': prompt,
             'stream': False,
             'options': {
-                'temperature': 0.3,
-                'num_predict': 500
+                'temperature': self.config.stage3_temperature,
+                'num_predict': self.config.stage3_max_tokens
             }
         }
         
@@ -372,7 +372,7 @@ Important:
             response = requests.post(
                 f'{base_url}/api/generate',
                 json=payload,
-                timeout=120
+                timeout=self.config.stage3_timeout
             )
             response.raise_for_status()
             

@@ -5,9 +5,13 @@ import logging
 import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from .models import FileInfo, Stage1Result, Stage2Result, ModelInfo
+from .models import (
+    FileInfo, Stage1Result, Stage2Result, ModelInfo,
+    FileAnalysis, Stage3Result, TaxonomyNode, FileAssignment, Stage4Result
+)
+from .stage5 import Stage5Result
 
 
 logger = logging.getLogger(__name__)
@@ -73,14 +77,10 @@ class CacheManager:
         if not cache_path.exists():
             return False
         
-        # Check TTL
-        cache_mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
-        if datetime.now() - cache_mtime > self.ttl:
-            logger.debug(f"Cache expired: {cache_path}")
-            return False
-        
+        # Cache is always valid if it exists
         # Check source file modification time if provided
         if source_file and source_file.exists():
+            cache_mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
             source_mtime = datetime.fromtimestamp(source_file.stat().st_mtime)
             if source_mtime > cache_mtime:
                 logger.debug(f"Source file newer than cache: {source_file}")
@@ -324,7 +324,7 @@ class CacheManager:
         Clear cache files.
         
         Args:
-            stage: Optional stage to clear ('stage1', 'stage2', or None for all)
+            stage: Optional stage to clear ('stage1', 'stage2', 'stage3', 'stage4', 'stage5', or None for all)
             
         Returns:
             Number of cache files removed
@@ -341,6 +341,12 @@ class CacheManager:
             patterns = ['stage1_*.json', 'file_*.json']
         elif stage == 'stage2':
             patterns = ['stage2_*.json']
+        elif stage == 'stage3':
+            patterns = ['stage3_*.json']
+        elif stage == 'stage4':
+            patterns = ['stage4_*.json']
+        elif stage == 'stage5':
+            patterns = ['stage5_*.json']
         else:
             logger.warning(f"Unknown stage for cache clear: {stage}")
             return 0
@@ -376,7 +382,6 @@ class CacheManager:
         stats = {
             'enabled': True,
             'cache_dir': str(self.cache_dir),
-            'ttl_hours': self.ttl.total_seconds() / 3600,
             'stage1_results': 0,
             'stage2_results': 0,
             'file_caches': 0,
@@ -390,12 +395,26 @@ class CacheManager:
                 stats['stage1_results'] += 1
             elif cache_file.name.startswith('stage2_'):
                 stats['stage2_results'] += 1
+            elif cache_file.name.startswith('stage3_file_'):
+                stats['file_caches'] += 1
+            elif cache_file.name.startswith('stage3_'):
+                stats.setdefault('stage3_results', 0)
+                stats['stage3_results'] += 1
+            elif cache_file.name.startswith('stage4_'):
+                stats.setdefault('stage4_results', 0)
+                stats['stage4_results'] += 1
+            elif cache_file.name.startswith('stage5_'):
+                stats.setdefault('stage5_results', 0)
+                stats['stage5_results'] += 1
             elif cache_file.name.startswith('file_'):
                 stats['file_caches'] += 1
         
         stats['total_files'] = (
             stats['stage1_results'] + 
             stats['stage2_results'] + 
+            stats.get('stage3_results', 0) +
+            stats.get('stage4_results', 0) +
+            stats.get('stage5_results', 0) +
             stats['file_caches']
         )
         
@@ -404,3 +423,331 @@ class CacheManager:
         stats['total_size_mb'] = round(size_mb, 2)
         
         return stats
+    
+    # ========== Stage 3 Caching ==========
+    
+    def get_stage3_file_cache(self, file_path: str) -> Optional[FileAnalysis]:
+        """
+        Get cached FileAnalysis for a specific file.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            FileAnalysis if cached and valid, None otherwise
+        """
+        if not self.enabled:
+            return None
+        
+        file_hash = self._get_file_hash(file_path)
+        cache_path = self.cache_dir / f"stage3_file_{file_hash}.json"
+        
+        source_path = Path(file_path)
+        if not self._is_cache_valid(cache_path, source_path):
+            return None
+        
+        try:
+            with open(cache_path, 'r') as f:
+                data = json.load(f)
+            
+            analysis = FileAnalysis(
+                file_path=data['file_path'],
+                assigned_model=data['assigned_model'],
+                proposed_filename=data['proposed_filename'],
+                description=data['description'],
+                tags=data['tags'],
+                analysis_timestamp=data.get('analysis_timestamp'),
+                error=data.get('error')
+            )
+            
+            logger.debug(f"Cache hit for Stage 3 file analysis: {file_path}")
+            return analysis
+        
+        except Exception as e:
+            logger.warning(f"Failed to load Stage 3 file cache for {file_path}: {e}")
+            return None
+    
+    def save_stage3_file_cache(self, analysis: FileAnalysis) -> None:
+        """
+        Save FileAnalysis to cache.
+        
+        Args:
+            analysis: FileAnalysis object to cache
+        """
+        if not self.enabled:
+            return
+        
+        file_hash = self._get_file_hash(analysis.file_path)
+        cache_path = self.cache_dir / f"stage3_file_{file_hash}.json"
+        
+        try:
+            with open(cache_path, 'w') as f:
+                json.dump(analysis.to_dict(), f, indent=2)
+            
+            logger.debug(f"Cached Stage 3 analysis: {analysis.file_path}")
+        
+        except Exception as e:
+            logger.warning(f"Failed to save Stage 3 file cache for {analysis.file_path}: {e}")
+    
+    def get_stage3_result_cache(self, source_directory: str) -> Optional[Stage3Result]:
+        """
+        Get cached Stage3Result for a directory.
+        
+        Args:
+            source_directory: Source directory path
+            
+        Returns:
+            Stage3Result if cached and valid, None otherwise
+        """
+        if not self.enabled:
+            return None
+        
+        dir_hash = self._get_directory_hash(source_directory)
+        cache_path = self.cache_dir / f"stage3_{dir_hash}.json"
+        
+        if not self._is_cache_valid(cache_path):
+            return None
+        
+        try:
+            with open(cache_path, 'r') as f:
+                data = json.load(f)
+            
+            # Load Stage2Result first (will be loaded from cache)
+            stage2_result = self.get_stage2_result_cache(source_directory)
+            if not stage2_result:
+                logger.warning("Stage 2 result not in cache, cannot load Stage 3")
+                return None
+            
+            # Load file analyses
+            file_analyses = []
+            for a_data in data.get('file_analyses', []):
+                analysis = FileAnalysis(
+                    file_path=a_data['file_path'],
+                    assigned_model=a_data['assigned_model'],
+                    proposed_filename=a_data['proposed_filename'],
+                    description=a_data['description'],
+                    tags=a_data['tags'],
+                    analysis_timestamp=a_data.get('analysis_timestamp'),
+                    error=a_data.get('error')
+                )
+                file_analyses.append(analysis)
+            
+            result = Stage3Result(
+                stage2_result=stage2_result,
+                file_analyses=file_analyses,
+                total_analyzed=data.get('total_analyzed', 0),
+                total_errors=data.get('total_errors', 0)
+            )
+            
+            logger.info(f"Loaded Stage 3 result from cache: {len(result.file_analyses)} analyses")
+            return result
+        
+        except Exception as e:
+            logger.warning(f"Failed to load Stage 3 cache: {e}")
+            return None
+    
+    def save_stage3_result_cache(self, result: Stage3Result) -> None:
+        """
+        Save Stage3Result to cache.
+        
+        Args:
+            result: Stage3Result to cache
+        """
+        if not self.enabled:
+            return
+        
+        dir_hash = self._get_directory_hash(result.stage2_result.stage1_result.source_directory)
+        cache_path = self.cache_dir / f"stage3_{dir_hash}.json"
+        
+        try:
+            with open(cache_path, 'w') as f:
+                json.dump(result.to_dict(), f, indent=2)
+            
+            logger.info(f"Saved Stage 3 result to cache: {len(result.file_analyses)} analyses")
+        
+        except Exception as e:
+            logger.warning(f"Failed to save Stage 3 cache: {e}")
+    
+    # ========== Stage 4 Caching ==========
+    
+    def get_stage4_result_cache(self, source_directory: str) -> Optional[Stage4Result]:
+        """
+        Get cached Stage4Result for a directory.
+        
+        Args:
+            source_directory: Source directory path
+            
+        Returns:
+            Stage4Result if cached and valid, None otherwise
+        """
+        if not self.enabled:
+            return None
+        
+        dir_hash = self._get_directory_hash(source_directory)
+        cache_path = self.cache_dir / f"stage4_{dir_hash}.json"
+        
+        if not self._is_cache_valid(cache_path):
+            return None
+        
+        try:
+            with open(cache_path, 'r') as f:
+                data = json.load(f)
+            
+            # Load Stage3Result first
+            stage3_result = self.get_stage3_result_cache(source_directory)
+            if not stage3_result:
+                logger.warning("Stage 3 result not in cache, cannot load Stage 4")
+                return None
+            
+            # Load taxonomy nodes
+            taxonomy = []
+            for t_data in data.get('taxonomy', []):
+                node = TaxonomyNode(
+                    name=t_data['name'],
+                    path=t_data['path'],
+                    description=t_data['description'],
+                    parent_path=t_data.get('parent_path'),
+                    level=t_data.get('level', 0)
+                )
+                taxonomy.append(node)
+            
+            # Load file assignments
+            file_assignments = []
+            for a_data in data.get('file_assignments', []):
+                assignment = FileAssignment(
+                    file_path=a_data['file_path'],
+                    taxonomy_path=a_data['taxonomy_path'],
+                    reason=a_data['reason']
+                )
+                file_assignments.append(assignment)
+            
+            result = Stage4Result(
+                stage3_result=stage3_result,
+                taxonomy=taxonomy,
+                file_assignments=file_assignments,
+                total_categories=data.get('total_categories', 0),
+                total_assigned=data.get('total_assigned', 0)
+            )
+            
+            logger.info(f"Loaded Stage 4 result from cache: {len(result.taxonomy)} categories")
+            return result
+        
+        except Exception as e:
+            logger.warning(f"Failed to load Stage 4 cache: {e}")
+            return None
+    
+    def save_stage4_result_cache(self, result: Stage4Result) -> None:
+        """
+        Save Stage4Result to cache.
+        
+        Args:
+            result: Stage4Result to cache
+        """
+        if not self.enabled:
+            return
+        
+        dir_hash = self._get_directory_hash(
+            result.stage3_result.stage2_result.stage1_result.source_directory
+        )
+        cache_path = self.cache_dir / f"stage4_{dir_hash}.json"
+        
+        try:
+            with open(cache_path, 'w') as f:
+                json.dump(result.to_dict(), f, indent=2)
+            
+            logger.info(f"Saved Stage 4 result to cache: {len(result.taxonomy)} categories")
+        
+        except Exception as e:
+            logger.warning(f"Failed to save Stage 4 cache: {e}")
+    
+    # ========== Stage 5 Caching ==========
+    
+    def get_stage5_result_cache(self, source_directory: str) -> Optional[Stage5Result]:
+        """
+        Get cached Stage5Result for a directory.
+        
+        Args:
+            source_directory: Source directory path
+            
+        Returns:
+            Stage5Result if cached and valid, None otherwise
+        """
+        if not self.enabled:
+            return None
+        
+        dir_hash = self._get_directory_hash(source_directory)
+        cache_path = self.cache_dir / f"stage5_{dir_hash}.json"
+        
+        if not self._is_cache_valid(cache_path):
+            return None
+        
+        try:
+            with open(cache_path, 'r') as f:
+                data = json.load(f)
+            
+            # Load Stage4Result first
+            stage4_result = self.get_stage4_result_cache(source_directory)
+            if not stage4_result:
+                logger.warning("Stage 4 result not in cache, cannot load Stage 5")
+                return None
+            
+            # Import MoveOperation here to avoid circular dependency
+            from .stage5 import MoveOperation
+            
+            # Load move operations
+            operations = []
+            for op_data in data.get('operations', []):
+                operation = MoveOperation(
+                    source_path=op_data['source_path'],
+                    destination_path=op_data['destination_path'],
+                    category=op_data['category'],
+                    reason=op_data.get('reason'),
+                    success=op_data.get('success', False),
+                    error=op_data.get('error')
+                )
+                operations.append(operation)
+            
+            result = Stage5Result(
+                stage4_result=stage4_result,
+                destination_root=data['destination_root'],
+                operations=operations,
+                total_files=data.get('total_files', 0),
+                successful_moves=data.get('successful_moves', 0),
+                failed_moves=data.get('failed_moves', 0),
+                skipped_moves=data.get('skipped_moves', 0),
+                excluded_moves=data.get('excluded_moves', 0),
+                error_moves=data.get('error_moves', 0),
+                dry_run=data.get('dry_run', False)
+            )
+            
+            logger.info(f"Loaded Stage 5 result from cache: {len(result.operations)} operations")
+            return result
+        
+        except Exception as e:
+            logger.warning(f"Failed to load Stage 5 cache: {e}")
+            return None
+    
+    def save_stage5_result_cache(self, result: Stage5Result) -> None:
+        """
+        Save Stage5Result to cache.
+        
+        Args:
+            result: Stage5Result to cache
+        """
+        if not self.enabled:
+            return
+        
+        dir_hash = self._get_directory_hash(
+            result.stage4_result.stage3_result.stage2_result.stage1_result.source_directory
+        )
+        cache_path = self.cache_dir / f"stage5_{dir_hash}.json"
+        
+        try:
+            with open(cache_path, 'w') as f:
+                json.dump(result.to_dict(), f, indent=2)
+            
+            logger.info(f"Saved Stage 5 result to cache: {len(result.operations)} operations")
+        
+        except Exception as e:
+            logger.warning(f"Failed to save Stage 5 cache: {e}")
+

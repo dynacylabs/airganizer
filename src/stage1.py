@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import Config
-from .models import FileInfo, Stage1Result
+from .models import FileInfo, Stage1Result, ExcludedFile
 from .metadata_extractor import extract_exif_data, extract_metadata_by_mime, run_binwalk
 from .cache import CacheManager
 
@@ -17,56 +17,60 @@ logger = logging.getLogger(__name__)
 class Stage1Scanner:
     """Stage 1: Scans directory and collects file information with metadata."""
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, progress_manager=None):
         """
         Initialize the Stage 1 scanner.
         
         Args:
             config: Configuration object
             cache_manager: Optional CacheManager for caching results
+            progress_manager: Optional ProgressManager for progress tracking
         """
         self.config = config
         self.mime = magic.Magic(mime=True)
         self.cache_manager = cache_manager or CacheManager(
             cache_dir=config.cache_directory,
-            enabled=config.cache_enabled,
-            ttl_hours=config.cache_ttl_hours
+            enabled=config.cache_enabled
         )
+        self.progress_manager = progress_manager
         logger.debug(f"Stage1Scanner initialized with cache_enabled={config.cache_enabled}")
         logger.debug(f"  - include_hidden={config.include_hidden}")
         logger.debug(f"  - exclude_extensions={config.exclude_extensions}")
         logger.debug(f"  - max_file_size={config.max_file_size}")
     
-    def _should_exclude_file(self, file_path: Path) -> bool:
+    def _get_exclusion_reason(self, file_path: Path) -> Optional[tuple[str, str]]:
         """
-        Check if a file should be excluded based on configuration.
+        Check if a file should be excluded and return the reason.
         
         Args:
             file_path: Path to the file
             
         Returns:
-            True if file should be excluded, False otherwise
+            Tuple of (reason, rule) if excluded, None otherwise
         """
         # Check if hidden file should be excluded
         if not self.config.include_hidden and file_path.name.startswith('.'):
             logger.debug(f"Excluding hidden file: {file_path}")
-            return True
+            return ("Hidden file (starts with .)", "hidden_file")
         
         # Check if file extension should be excluded
         if file_path.suffix.lower() in self.config.exclude_extensions:
-            return True
+            return (f"File extension '{file_path.suffix}' is in exclusion list", f"extension:{file_path.suffix}")
         
         # Check file size limit
         if self.config.max_file_size > 0:
             try:
-                if file_path.stat().st_size > self.config.max_file_size:
+                file_size = file_path.stat().st_size
+                if file_size > self.config.max_file_size:
                     logger.info(f"Excluding file due to size limit: {file_path}")
-                    return True
+                    size_mb = file_size / (1024 * 1024)
+                    limit_mb = self.config.max_file_size / (1024 * 1024)
+                    return (f"File size ({size_mb:.2f} MB) exceeds limit ({limit_mb:.2f} MB)", "size_limit")
             except OSError as e:
                 logger.warning(f"Cannot stat file {file_path}: {e}")
-                return True
+                return (f"Cannot access file: {e}", "access_error")
         
-        return False
+        return None
     
     def _should_exclude_dir(self, dir_path: Path) -> bool:
         """
@@ -114,8 +118,17 @@ class Stage1Scanner:
             result: Stage1Result object to add the file to
         """
         try:
-            if self._should_exclude_file(file_path):
-                logger.debug(f"Excluding file: {file_path}")
+            # Check if file should be excluded
+            exclusion = self._get_exclusion_reason(file_path)
+            if exclusion:
+                reason, rule = exclusion
+                logger.debug(f"Excluding file: {file_path} - {reason}")
+                result.add_excluded_file(ExcludedFile(
+                    file_path=str(file_path),
+                    file_name=file_path.name,
+                    reason=reason,
+                    rule=rule
+                ))
                 return
             
             # Try to get from cache first
@@ -246,8 +259,46 @@ class Stage1Scanner:
             errors=[]
         )
         
-        # Scan the directory for files and collect metadata
-        self._scan_directory_recursive(source_path, result)
+        # First, collect all file paths
+        if self.progress_manager:
+            self.progress_manager.update_file_info("Discovering files...")
+        
+        all_files = []
+        for root, dirs, files in source_path.walk():
+            # Filter directories
+            if not self.config.recursive and root != source_path:
+                break
+            
+            dirs[:] = [d for d in dirs if not self._should_exclude_dir(root / d)]
+            
+            # Add files
+            for file in files:
+                file_path = root / file
+                if not file_path.is_symlink() or self.config.follow_symlinks:
+                    all_files.append(file_path)
+        
+        total_files = len(all_files)
+        logger.info(f"Found {total_files} files to process")
+        
+        # Start progress tracking
+        if self.progress_manager:
+            self.progress_manager.start_stage(1, "File Scanning", total_files)
+        
+        # Scan files with progress tracking
+        for idx, file_path in enumerate(all_files, 1):
+            if self.progress_manager:
+                self.progress_manager.update_file_info(
+                    f"[{idx}/{total_files}] Processing: {file_path.name}\n"
+                    f"Path: {file_path}\n"
+                    f"Size: {file_path.stat().st_size if file_path.exists() else 'N/A'} bytes"
+                )
+                self.progress_manager.update_stage_progress(idx)
+            
+            self._scan_file(file_path, result)
+        
+        # Complete stage progress
+        if self.progress_manager:
+            self.progress_manager.complete_stage()
         
         logger.info(f"File scanning complete: Found {result.total_files} files")
         if result.errors:

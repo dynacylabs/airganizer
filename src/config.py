@@ -180,3 +180,72 @@ class Config:
         """Get the Anthropic API key from environment."""
         api_key_env = self.get('models.anthropic.api_key_env', 'ANTHROPIC_API_KEY')
         return os.getenv(api_key_env)
+    
+    # Stage 3 settings
+    @property
+    def stage3_max_files(self) -> int:
+        """Get maximum files to analyze in Stage 3."""
+        return self.get('stage3.max_files', 0)
+    
+    @property
+    def stage3_temperature(self) -> float:
+        """Get AI temperature for Stage 3 analysis."""
+        return self.get('stage3.ai.temperature', 0.3)
+    
+    @property
+    def stage3_max_tokens(self) -> int:
+        """Get max tokens for Stage 3 AI responses."""
+        return self.get('stage3.ai.max_tokens', 1000)
+    
+    @property
+    def stage3_timeout(self) -> int:
+        """Get API timeout for Stage 3 in seconds."""
+        return self.get('stage3.ai.timeout', 60)
+    
+    # Stage 4 settings
+    @property
+    def stage4_batch_size(self) -> int:
+        """Get batch size for Stage 4 processing."""
+        return self.get('stage4.batch_size', 100)
+    
+    @property
+    def stage4_temperature(self) -> float:
+        """Get AI temperature for Stage 4 taxonomy."""
+        return self.get('stage4.ai.temperature', 0.3)
+    
+    @property
+    def stage4_max_tokens(self) -> int:
+        """Get max tokens for Stage 4 AI responses."""
+        return self.get('stage4.ai.max_tokens', 4000)
+    
+    @property
+    def stage4_timeout(self) -> int:
+        """Get API timeout for Stage 4 in seconds."""
+        return self.get('stage4.ai.timeout', 120)
+    
+    # Stage 5 settings
+    @property
+    def stage5_overwrite(self) -> bool:
+        """Get whether to overwrite existing files in Stage 5."""
+        return self.get('stage5.overwrite', False)
+    
+    @property
+    def stage5_dry_run(self) -> bool:
+        """Get whether to perform dry-run in Stage 5."""
+        return self.get('stage5.dry_run', False)
+    
+    # Mapping AI settings
+    @property
+    def mapping_temperature(self) -> float:
+        """Get AI temperature for MIME mapping."""
+        return self.get('mapping.ai.temperature', 0.3)
+    
+    @property
+    def mapping_max_tokens(self) -> int:
+        """Get max tokens for mapping AI responses."""
+        return self.get('mapping.ai.max_tokens', 2000)
+    
+    @property
+    def mapping_timeout(self) -> int:
+        """Get API timeout for mapping in seconds."""
+        return self.get('mapping.ai.timeout', 60)

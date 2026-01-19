@@ -17,22 +17,23 @@ logger = logging.getLogger(__name__)
 class Stage3Processor:
     """Stage 3: Analyzes each file with AI to generate descriptions and tags."""
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, progress_manager=None):
         """
         Initialize the Stage 3 processor.
         
         Args:
             config: Configuration object
             cache_manager: Optional CacheManager for caching results
+            progress_manager: Optional ProgressManager for progress tracking
         """
         self.config = config
         self.model_discovery = ModelDiscovery(config)
         self.ai_interface = AIModelInterface(config)
         self.cache_manager = cache_manager or CacheManager(
             cache_dir=config.cache_directory,
-            enabled=config.cache_enabled,
-            ttl_hours=config.cache_ttl_hours
+            enabled=config.cache_enabled
         )
+        self.progress_manager = progress_manager
     
     def _analyze_single_file(
         self,
@@ -134,8 +135,21 @@ class Stage3Processor:
         if max_files:
             logger.info(f"Limited to {max_files} files for this run")
         if use_cache:
-            logger.info("Cache enabled: Will save results for future use")
+            logger.info("Cache enabled: Will use cached results if available")
         logger.info("=" * 60)
+        
+        # Try to load from cache first
+        if use_cache and self.cache_manager.enabled:
+            cached_result = self.cache_manager.get_stage3_result_cache(
+                stage2_result.stage1_result.source_directory
+            )
+            if cached_result:
+                logger.info("✓ Loaded Stage 3 results from cache")
+                logger.info(f"  Total files: {len(cached_result.file_analyses)}")
+                logger.info(f"  Successfully analyzed: {cached_result.total_analyzed}")
+                logger.info(f"  Errors: {cached_result.total_errors}")
+                logger.info("=" * 60)
+                return cached_result
         
         # Initialize Stage 3 result
         result = Stage3Result(stage2_result=stage2_result)
@@ -153,48 +167,79 @@ class Stage3Processor:
         total_files = len(files_to_process)
         logger.info(f"Processing {total_files} files")
         
+        # Start progress tracking
+        if self.progress_manager:
+            self.progress_manager.start_stage(3, "AI File Analysis", total_files)
+        
+        # Track cache hits/misses
+        cache_hits = 0
+        cache_misses = 0
+        
         # Process each file
         for idx, file_info in enumerate(files_to_process, 1):
+            # Update progress
+            if self.progress_manager:
+                self.progress_manager.update_file_info(
+                    f"[{idx}/{total_files}] Analyzing: {file_info.file_name}\n"
+                    f"Path: {file_info.file_path}\n"
+                    f"MIME: {file_info.mime_type}\n"
+                    f"Size: {file_info.file_size} bytes"
+                )
+                self.progress_manager.update_stage_progress(idx)
+            
             logger.info("-" * 60)
             logger.info(f"File {idx}/{total_files}: {file_info.file_name}")
             logger.info(f"  Path: {file_info.file_path}")
             logger.info(f"  MIME: {file_info.mime_type}")
             logger.info(f"  Size: {file_info.file_size} bytes")
             
-            # Get assigned model
-            model_name = stage2_result.get_model_for_file(file_info)
+            # Try to load from per-file cache first
+            analysis = None
+            if use_cache and self.cache_manager.enabled:
+                analysis = self.cache_manager.get_stage3_file_cache(file_info.file_path)
+                if analysis:
+                    logger.debug(f"  ✓ Loaded from cache")
+                    cache_hits += 1
             
-            if not model_name:
-                logger.warning(f"  No model assigned for MIME type: {file_info.mime_type}")
-                analysis = FileAnalysis(
-                    file_path=file_info.file_path,
-                    assigned_model="none",
+            # If not in cache, analyze the file
+            if not analysis:
+                if use_cache and self.cache_manager.enabled:
+                    logger.debug(f"  ✗ Not in cache, analyzing...")
+                    cache_misses += 1
+                
+                # Get assigned model
+                model_name = stage2_result.get_model_for_file(file_info)
+                
+                if not model_name:
+                    logger.warning(f"  No model assigned for MIME type: {file_info.mime_type}")
+                    analysis = FileAnalysis(
+                        file_path=file_info.file_path,
+                        assigned_model="none",
                     proposed_filename=file_info.file_name,
                     description="No model assigned",
                     tags=['unassigned'],
                     error="No model mapping for this MIME type"
                 )
-                result.add_analysis(analysis)
-                continue
-            
-            logger.info(f"  Assigned model: {model_name}")
-            
-            # Check if model is connected
-            if not stage2_result.model_connectivity.get(model_name, False):
-                logger.warning(f"  Model not connected: {model_name}")
-                analysis = FileAnalysis(
-                    file_path=file_info.file_path,
-                    assigned_model=model_name,
-                    proposed_filename=file_info.file_name,
-                    description="Model not available",
-                    tags=['unavailable'],
-                    error=f"Model not connected: {model_name}"
-                )
-                result.add_analysis(analysis)
-                continue
-            
-            # Analyze the file
-            analysis = self._analyze_single_file(file_info, model_name, available_models)
+                
+                elif not stage2_result.model_connectivity.get(model_name, False):
+                    logger.warning(f"  Model not connected: {model_name}")
+                    analysis = FileAnalysis(
+                        file_path=file_info.file_path,
+                        assigned_model=model_name,
+                        proposed_filename=file_info.file_name,
+                        description="Model not available",
+                        tags=['unavailable'],
+                        error=f"Model not connected: {model_name}"
+                    )
+                
+                else:
+                    logger.info(f"  Assigned model: {model_name}")
+                    # Analyze the file
+                    analysis = self._analyze_single_file(file_info, model_name, available_models)
+                
+                # Save to per-file cache
+                if use_cache and self.cache_manager.enabled:
+                    self.cache_manager.save_stage3_file_cache(analysis)
             
             # Log results
             if analysis.error:
@@ -207,11 +252,22 @@ class Stage3Processor:
             
             result.add_analysis(analysis)
         
+        # Save complete Stage 3 result to cache
+        if use_cache and self.cache_manager.enabled:
+            self.cache_manager.save_stage3_result_cache(result)
+        
+        # Complete stage progress
+        if self.progress_manager:
+            self.progress_manager.complete_stage()
+        
         logger.info("=" * 60)
         logger.info("Stage 3 complete!")
         logger.info(f"  Total files: {total_files}")
         logger.info(f"  Successfully analyzed: {result.total_analyzed}")
         logger.info(f"  Errors: {result.total_errors}")
+        if use_cache and self.cache_manager.enabled:
+            logger.info(f"  Cache hits: {cache_hits}")
+            logger.info(f"  Cache misses: {cache_misses}")
         logger.info("=" * 60)
         
         return result

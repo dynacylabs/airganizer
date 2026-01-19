@@ -16,21 +16,22 @@ logger = logging.getLogger(__name__)
 class Stage2Processor:
     """Stage 2: Discovers AI models and creates MIME-to-model mappings."""
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, progress_manager=None):
         """
         Initialize the Stage 2 processor.
         
         Args:
             config: Configuration object
             cache_manager: Optional CacheManager for caching results
+            progress_manager: Optional ProgressManager for progress tracking
         """
         self.config = config
         self.model_discovery = ModelDiscovery(config)
         self.cache_manager = cache_manager or CacheManager(
             cache_dir=config.cache_directory,
-            enabled=config.cache_enabled,
-            ttl_hours=config.cache_ttl_hours
+            enabled=config.cache_enabled
         )
+        self.progress_manager = progress_manager
     
     def process(self, stage1_result: Stage1Result, use_cache: bool = True) -> Stage2Result:
         """
@@ -60,6 +61,11 @@ class Stage2Processor:
             logger.info(f"Cache enabled: Will save results for future use")
         logger.info("=" * 60)
         
+        # Start progress tracking
+        if self.progress_manager:
+            self.progress_manager.start_stage(2, "Model Discovery", 3)  # 3 steps: discover, map, verify
+            self.progress_manager.update_file_info("Discovering available AI models...")
+        
         # Initialize Stage 2 result with Stage 1 data
         result = Stage2Result(stage1_result=stage1_result)
         
@@ -67,9 +73,14 @@ class Stage2Processor:
         logger.info("Discovering available AI models")
         available_models = self.model_discovery.discover_models()
         
+        if self.progress_manager:
+            self.progress_manager.update_stage_progress(1)
+        
         if not available_models:
             logger.warning("No AI models available!")
             logger.warning("Stage 2 cannot proceed without models")
+            if self.progress_manager:
+                self.progress_manager.complete_stage()
             return result
         
         logger.info(f"Found {len(available_models)} available models:")
@@ -81,6 +92,10 @@ class Stage2Processor:
         
         # Create MIME type to model mapping using AI
         if stage1_result.unique_mime_types:
+            if self.progress_manager:
+                self.progress_manager.update_file_info(
+                    f"Mapping {len(stage1_result.unique_mime_types)} MIME types to models..."
+                )
             logger.info("=" * 60)
             logger.info("Creating AI-powered MIME-to-model mapping")
             logger.info("=" * 60)
@@ -117,12 +132,21 @@ class Stage2Processor:
                 logger.info("All required models are available")
             
             # Verify connectivity to all models
+            if self.progress_manager:
+                self.progress_manager.update_file_info(
+                    f"Verifying connectivity to {len(available_models)} models..."
+                )
+                self.progress_manager.update_stage_progress(2)
+            
             logger.info("=" * 60)
             logger.info("Verifying AI model connectivity")
             logger.info("=" * 60)
             
             connectivity_results = self.model_discovery.verify_all_models(available_models)
             result.set_model_connectivity(connectivity_results)
+            
+            if self.progress_manager:
+                self.progress_manager.update_stage_progress(3)
             
             # Log connectivity results
             logger.info("Model connectivity status:")
@@ -148,6 +172,10 @@ class Stage2Processor:
                 logger.info("✓ All required models verified and accessible")
         else:
             logger.warning("No MIME types to map")
+        
+        # Complete stage progress
+        if self.progress_manager:
+            self.progress_manager.complete_stage()
         
         # Save complete result to cache
         if use_cache:

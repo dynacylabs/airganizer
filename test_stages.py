@@ -40,8 +40,7 @@ def main():
     # Initialize cache manager
     cache_manager = CacheManager(
         cache_dir='.test_cache',
-        enabled=True,
-        ttl_hours=1
+        enabled=True
     )
     
     # Create test directory with sample files

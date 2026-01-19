@@ -23,6 +23,34 @@ class FileInfo:
 
 
 @dataclass
+class ExcludedFile:
+    """Information about an excluded file."""
+    
+    file_path: str
+    file_name: str
+    reason: str  # Why it was excluded
+    rule: str    # Which rule caused exclusion (e.g., "hidden_file", "extension:.tmp", "size_limit")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert ExcludedFile to dictionary."""
+        return asdict(self)
+
+
+@dataclass
+class ErrorFile:
+    """Information about a file that encountered an error."""
+    
+    file_path: str
+    file_name: str
+    error: str      # Error message
+    stage: str      # Which stage encountered the error
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert ErrorFile to dictionary."""
+        return asdict(self)
+
+
+@dataclass
 class ModelInfo:
     """Information about an available AI model."""
     
@@ -46,6 +74,7 @@ class Stage1Result:
     total_files: int
     files: List[FileInfo]
     errors: List[Dict[str, str]]
+    excluded_files: List[ExcludedFile] = field(default_factory=list)
     unique_mime_types: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -55,6 +84,7 @@ class Stage1Result:
             'total_files': self.total_files,
             'files': [f.to_dict() for f in self.files],
             'errors': self.errors,
+            'excluded_files': [e.to_dict() for e in self.excluded_files],
             'unique_mime_types': self.unique_mime_types
         }
     
@@ -62,6 +92,10 @@ class Stage1Result:
         """Add a file to the results."""
         self.files.append(file_info)
         self.total_files = len(self.files)
+    
+    def add_excluded_file(self, excluded_file: ExcludedFile) -> None:
+        """Add an excluded file to the results."""
+        self.excluded_files.append(excluded_file)
     
     def add_error(self, file_path: str, error_message: str) -> None:
         """Add an error to the results."""

@@ -5,8 +5,4 @@ openai>=1.0.0
 anthropic>=0.18.0
 Pillow>=10.0.0
 exifread>=3.0.0
-
-# Note: binwalk is a system tool, install with:
-# apt-get install binwalk (Debian/Ubuntu)
-# brew install binwalk (macOS)
-# The application will work without binwalk but that functionality will be skipped
+rich>=13.0.0

@@ -8,6 +8,7 @@ from .config import Config
 from .models import Stage3Result, Stage4Result, TaxonomyNode, FileAssignment
 from .model_discovery import ModelDiscovery
 from .ai_interface import AIModelInterface
+from .cache import CacheManager
 
 
 logger = logging.getLogger(__name__)
@@ -16,16 +17,23 @@ logger = logging.getLogger(__name__)
 class Stage4Processor:
     """Stage 4: Creates taxonomic directory structure based on file analysis."""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, progress_manager=None):
         """
         Initialize the Stage 4 processor.
         
         Args:
             config: Configuration object
+            cache_manager: Optional CacheManager for caching results
+            progress_manager: Optional ProgressManager for progress tracking
         """
         self.config = config
         self.model_discovery = ModelDiscovery(config)
         self.ai_interface = AIModelInterface(config)
+        self.cache_manager = cache_manager or CacheManager(
+            cache_dir=config.cache_directory,
+            enabled=config.cache_enabled
+        )
+        self.progress_manager = progress_manager
         logger.debug("Stage4Processor initialized")
         logger.debug(f"  - Taxonomic structure planning enabled")
     
@@ -252,10 +260,10 @@ Important:
                 json={
                     'model': model.model_name,
                     'messages': [{'role': 'user', 'content': prompt}],
-                    'max_tokens': 4000,
-                    'temperature': 0.3
+                    'max_tokens': self.config.stage4_max_tokens,
+                    'temperature': self.config.stage4_temperature
                 },
-                timeout=120
+                timeout=self.config.stage4_timeout
             )
             response.raise_for_status()
             return response.json()['choices'][0]['message']['content']
@@ -273,13 +281,13 @@ Important:
                 },
                 json={
                     'model': model.model_name,
-                    'max_tokens': 4096,
+                    'max_tokens': self.config.stage4_max_tokens,
                     'messages': [{
                         'role': 'user',
                         'content': prompt
                     }]
                 },
-                timeout=120
+                timeout=self.config.stage4_timeout
             )
             response.raise_for_status()
             return response.json()['content'][0]['text']
@@ -294,11 +302,11 @@ Important:
                     'prompt': prompt,
                     'stream': False,
                     'options': {
-                        'temperature': 0.3,
-                        'num_predict': 4000
+                        'temperature': self.config.stage4_temperature,
+                        'num_predict': self.config.stage4_max_tokens
                     }
                 },
-                timeout=180
+                timeout=self.config.stage4_timeout
             )
             response.raise_for_status()
             return response.json()['response']
@@ -309,7 +317,8 @@ Important:
     def process(
         self,
         stage3_result: Stage3Result,
-        batch_size: int = 100
+        batch_size: int = 100,
+        use_cache: bool = True
     ) -> Stage4Result:
         """
         Process Stage 3 results to create taxonomic organization structure.
@@ -317,6 +326,7 @@ Important:
         Args:
             stage3_result: Results from Stage 3
             batch_size: Number of files to process in each batch
+            use_cache: Whether to use cached results if available
             
         Returns:
             Stage4Result with taxonomy and file assignments
@@ -325,7 +335,24 @@ Important:
         logger.info("Starting Stage 4: Taxonomic Structure Planning")
         logger.debug(f"Stage4Processor configuration:")
         logger.debug(f"  - batch_size: {batch_size}")
+        logger.debug(f"  - cache_enabled: {self.cache_manager.enabled}")
+        logger.debug(f"  - cache_dir: {self.cache_manager.cache_dir}")
+        if use_cache:
+            logger.info("Cache enabled: Will use cached results if available")
         logger.info("=" * 60)
+        
+        # Try to load from cache first
+        if use_cache and self.cache_manager.enabled:
+            cached_result = self.cache_manager.get_stage4_result_cache(
+                stage3_result.stage2_result.stage1_result.source_directory
+            )
+            if cached_result:
+                logger.info("✓ Loaded Stage 4 results from cache")
+                logger.info(f"  Total categories: {cached_result.total_categories}")
+                logger.info(f"  Files assigned: {cached_result.total_assigned}")
+                logger.info(f"  Max depth: {max(len(n.path.split('/')) for n in cached_result.taxonomy) if cached_result.taxonomy else 0}")
+                logger.info("=" * 60)
+                return cached_result
         
         # Initialize result
         result = Stage4Result(stage3_result=stage3_result)
@@ -356,10 +383,23 @@ Important:
         total_batches = (len(files_with_analysis) + batch_size - 1) // batch_size
         logger.info(f"Processing in {total_batches} batch(es) of {batch_size} files")
         
+        # Start progress tracking
+        if self.progress_manager:
+            self.progress_manager.start_stage(4, "Taxonomy Planning", total_batches)
+        
         for batch_num in range(total_batches):
             start_idx = batch_num * batch_size
             end_idx = min(start_idx + batch_size, len(files_with_analysis))
             batch = files_with_analysis[start_idx:end_idx]
+            
+            # Update progress
+            if self.progress_manager:
+                self.progress_manager.update_file_info(
+                    f"[Batch {batch_num + 1}/{total_batches}] Planning taxonomy for files {start_idx + 1}-{end_idx}\n"
+                    f"Batch size: {len(batch)} files\n"
+                    f"Total categories so far: {len(result.taxonomy)}"
+                )
+                self.progress_manager.update_stage_progress(batch_num + 1)
             
             logger.info("-" * 60)
             logger.info(f"Batch {batch_num + 1}/{total_batches}: Processing files {start_idx + 1}-{end_idx}")
@@ -430,6 +470,14 @@ Important:
                         reasoning='Batch processing error'
                     )
                     result.add_file_assignment(assignment)
+        
+        # Save complete Stage 4 result to cache
+        if use_cache and self.cache_manager.enabled:
+            self.cache_manager.save_stage4_result_cache(result)
+        
+        # Complete stage progress
+        if self.progress_manager:
+            self.progress_manager.complete_stage()
         
         logger.info("=" * 60)
         logger.info("Stage 4 complete!")
