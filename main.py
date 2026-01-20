@@ -17,22 +17,39 @@ from src.cache import CacheManager
 from src.progress import ProgressManager
 
 
-def setup_logging(log_level: str) -> None:
+def setup_logging(log_level: str, use_rich: bool = False) -> None:
     """
     Setup logging configuration.
     
     Args:
         log_level: Log level string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        use_rich: Whether to use Rich's logging handler for better formatting with progress bars
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
     
-    logging.basicConfig(
-        level=numeric_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    if use_rich:
+        # Use Rich's logging handler to integrate with progress bars
+        from rich.logging import RichHandler
+        logging.basicConfig(
+            level=numeric_level,
+            format='%(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            handlers=[RichHandler(
+                rich_tracebacks=True,
+                show_time=False,
+                show_path=False,
+                markup=True
+            )]
+        )
+    else:
+        # Standard logging
+        logging.basicConfig(
+            level=numeric_level,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -199,7 +216,10 @@ def main() -> int:
             log_level = 'INFO'
         else:
             log_level = config.log_level
-        setup_logging(log_level)
+        
+        # Use Rich logging when progress bars are enabled (not debug mode)
+        use_rich_logging = not args.debug
+        setup_logging(log_level, use_rich=use_rich_logging)
         
         logger = logging.getLogger(__name__)
         logger.info("AI File Organizer starting...")
