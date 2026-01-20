@@ -5,7 +5,7 @@ import logging
 import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .models import (
     FileInfo, Stage1Result, Stage2Result, ModelInfo,
