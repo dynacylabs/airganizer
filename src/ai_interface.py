@@ -46,7 +46,7 @@ class AIModelInterface:
         Returns:
             Dictionary with proposed_filename, description, and tags
         """
-        logger.info(f"Analyzing {file_path} with {model.name}")
+        logger.debug(f"Analyzing {file_path} with {model.name}")
         logger.debug(f"  - MIME type: {mime_type}")
         logger.debug(f"  - Provider: {model.provider}")
         logger.debug(f"  - Model: {model.name}")

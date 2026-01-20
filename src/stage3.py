@@ -81,7 +81,7 @@ class Stage3Processor:
             }
             
             # Call AI model
-            logger.info(f"Analyzing: {file_info.file_name} with {model_name}")
+            logger.debug(f"Calling AI model: {model_name}")
             analysis_result = self.ai_interface.analyze_file(
                 file_info.file_path,
                 file_info.mime_type,
@@ -249,7 +249,7 @@ class Stage3Processor:
                     )
                 
                 else:
-                    logger.info(f"  Assigned model: {model_name}")
+                    logger.debug(f"Using model: {model_name}")
                     # Analyze the file
                     analysis = self._analyze_single_file(file_info, model_name, available_models)
                 
