@@ -1,174 +1,1193 @@
-# AI File Organizer Configuration File
-# This is an example configuration file showing available options
+# ============================================================================
+# AIrganizer Configuration File
+# ============================================================================
+# Complete configuration reference for the AI File Organizer
+# See CONFIGURATION.md for detailed documentation
+# ============================================================================
 
-# General settings
+# ============================================================================
+# SECTION 1: GENERAL SETTINGS
+# ============================================================================
+# Core application settings that apply globally across all stages
+
 general:
-  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  # ----------------------------------------------------------------------------
+  # log_level: Controls the verbosity of logging output
+  # ----------------------------------------------------------------------------
+  # Type: String (enum)
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # Default: INFO
+  # 
+  # Description:
+  #   - DEBUG: Maximum verbosity, shows all internal operations, file processing
+  #            details, API calls, cache operations. Use for development/debugging.
+  #   - INFO: Standard verbosity, shows stage progress, file counts, important
+  #           operations. Recommended for normal use.
+  #   - WARNING: Shows only warnings and errors. Use when you want minimal output.
+  #   - ERROR: Shows only errors and critical failures.
+  #   - CRITICAL: Shows only critical failures that stop execution.
+  #
+  # Use cases:
+  #   - Development: DEBUG to see everything
+  #   - Production: INFO for monitoring
+  #   - Automated scripts: WARNING or ERROR for clean logs
+  #
+  # Note: Can be overridden with --verbose CLI flag (sets to DEBUG)
   log_level: INFO
   
-  # Maximum file size to process (in MB, 0 = no limit)
+  # ----------------------------------------------------------------------------
+  # max_file_size: Maximum file size to process
+  # ----------------------------------------------------------------------------
+  # Type: Integer (megabytes)
+  # Default: 0 (no limit)
+  # Range: 0-unlimited
+  #
+  # Description:
+  #   Sets the maximum file size (in MB) that will be processed. Files larger
+  #   than this limit will be excluded from analysis and organization.
+  #   Set to 0 to process files of any size.
+  #
+  # Typical values:
+  #   - 0: No limit (process everything)
+  #   - 10: Skip files larger than 10 MB (good for testing)
+  #   - 100: Skip large video/database files
+  #   - 1000: Skip very large files only (1 GB limit)
+  #
+  # Use cases:
+  #   - Testing: Set to 10-50 MB to skip large files during config testing
+  #   - Performance: Limit to avoid processing huge video/database files
+  #   - API costs: Smaller files = fewer tokens for AI analysis
+  #
+  # Note: Excluded files are logged in Stage 5 excluded files list
   max_file_size: 0
   
-  # File extensions to exclude (comma-separated)
+  # ----------------------------------------------------------------------------
+  # exclude_extensions: File extensions to exclude from processing
+  # ----------------------------------------------------------------------------
+  # Type: List of strings
+  # Default: [] (empty list)
+  #
+  # Description:
+  #   List of file extensions to completely exclude from scanning and processing.
+  #   Extensions should include the leading dot (e.g., ".tmp" not "tmp").
+  #   These files will not be scanned, analyzed, or organized.
+  #
+  # Common exclusions:
+  #   Temporary files: [".tmp", ".temp", ".bak", ".swp", ".cache"]
+  #   System files: [".DS_Store", ".Thumbs.db", ".lock"]
+  #   Log files: [".log", ".out", ".err"]
+  #   Build artifacts: [".o", ".obj", ".pyc", ".class"]
+  #
+  # Example configurations:
+  #   Minimal: []
+  #   Standard: [".tmp", ".cache", ".log", ".bak"]
+  #   Aggressive: [".tmp", ".cache", ".log", ".bak", ".swp", ".DS_Store", ".pyc"]
+  #
+  # Performance impact: More exclusions = faster scanning
   exclude_extensions: []
   
-  # Directories to exclude from scanning
+  # ----------------------------------------------------------------------------
+  # exclude_dirs: Directory names to exclude from scanning
+  # ----------------------------------------------------------------------------
+  # Type: List of strings
+  # Default: [".git", "__pycache__", "node_modules", ".venv"]
+  #
+  # Description:
+  #   List of directory names to skip during recursive scanning. Any directory
+  #   with these exact names will be completely ignored, regardless of path.
+  #   This prevents scanning of development artifacts and system directories.
+  #
+  # Recommended exclusions:
+  #   Version control: [".git", ".svn", ".hg"]
+  #   Python: ["__pycache__", ".venv", "venv", ".tox", ".pytest_cache"]
+  #   Node.js: ["node_modules", ".npm"]
+  #   Build outputs: ["build", "dist", "target", "out"]
+  #   IDE: [".vscode", ".idea", ".eclipse"]
+  #
+  # Default configuration excludes common development directories:
+  #   - .git: Git version control
+  #   - __pycache__: Python bytecode cache
+  #   - node_modules: Node.js dependencies
+  #   - .venv: Python virtual environment
+  #
+  # Performance impact: Critical! Excluding node_modules can save hours
+  # Security: Exclude sensitive directories like .ssh, .aws, .config
   exclude_dirs: [".git", "__pycache__", "node_modules", ".venv"]
 
-# Stage 1 settings
+# ============================================================================
+# SECTION 2: STAGE 1 - FILE SCANNING AND METADATA COLLECTION
+# ============================================================================
+# Controls how files are discovered and metadata is extracted
+
 stage1:
-  # Enable recursive directory scanning
+  # ----------------------------------------------------------------------------
+  # recursive: Enable recursive directory scanning
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: true
+  #
+  # Description:
+  #   When true, scans all subdirectories recursively. When false, scans only
+  #   the top-level directory (immediate children, no subdirectories).
+  #
+  # Typical values:
+  #   - true: Most common, organize entire directory trees
+  #   - false: When organizing a flat directory or testing
+  #
+  # Use cases:
+  #   - true: Organize ~/Downloads with nested folders
+  #   - false: Organize a single flat photo album
+  #
+  # Performance: false is much faster for directories with many subdirectories
   recursive: true
   
-  # Follow symbolic links
+  # ----------------------------------------------------------------------------
+  # follow_symlinks: Follow symbolic links during scanning
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: false
+  #
+  # Description:
+  #   When true, follows symbolic links and processes the target files/directories.
+  #   When false, symlinks are skipped entirely.
+  #
+  # Typical values:
+  #   - false: Recommended, prevents infinite loops and duplicate processing
+  #   - true: Only if you have specific symlinked content to organize
+  #
+  # Security warning:
+  #   Setting to true can cause infinite loops if circular symlinks exist.
+  #   Can also process files outside the source directory.
+  #
+  # Use cases:
+  #   - false: Safe default for most scenarios
+  #   - true: When organizing symlinked network drives or specific setups
   follow_symlinks: false
   
-  # Include hidden files (files starting with .)
+  # ----------------------------------------------------------------------------
+  # include_hidden: Include hidden files (starting with .)
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: false
+  #
+  # Description:
+  #   When true, processes hidden files (filenames starting with dot).
+  #   When false, skips all hidden files.
+  #
+  # Typical values:
+  #   - false: Recommended, skips system/config files
+  #   - true: When organizing backup directories with hidden files
+  #
+  # Common hidden files (that you usually want to skip):
+  #   - .DS_Store (macOS metadata)
+  #   - .gitignore, .gitconfig
+  #   - .bashrc, .zshrc
+  #   - .env (environment variables - DO NOT ORGANIZE!)
+  #
+  # Security warning:
+  #   Hidden files often contain sensitive configuration (SSH keys, API keys).
+  #   Keep this false unless you specifically need to organize hidden files.
+  #
+  # Use cases:
+  #   - false: Normal file organization
+  #   - true: Organizing backups, dotfiles repositories
   include_hidden: false
 
-# Cache settings
+# ============================================================================
+# SECTION 3: CACHE SYSTEM
+# ============================================================================
+# Controls caching for resumable pipeline execution across all 5 stages
+
 cache:
-  # Enable/disable caching for resumable operations
+  # ----------------------------------------------------------------------------
+  # enabled: Enable/disable the caching system
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: true
+  #
+  # Description:
+  #   Controls whether the cache system is active. When enabled, each pipeline
+  #   stage saves its results to disk, allowing the pipeline to resume from
+  #   where it left off if interrupted. When disabled, all processing starts
+  #   from scratch every time.
+  #
+  # Cache provides:
+  #   - Stage 1: Scanned files, metadata, MIME types
+  #   - Stage 2: Discovered models, MIME→model mapping
+  #   - Stage 3: AI analysis results (per file)
+  #   - Stage 4: Taxonomy structure, file assignments
+  #   - Stage 5: Move operations, conflict resolutions
+  #
+  # Typical values:
+  #   - true: Recommended, enables resumability and saves time/money
+  #   - false: Only when testing or debugging cache issues
+  #
+  # Benefits of caching:
+  #   - Resume after interruption (power loss, Ctrl+C)
+  #   - Skip already-analyzed files when adding new files
+  #   - Save API costs by not re-analyzing files
+  #   - Faster iteration during development/testing
+  #
+  # Performance impact: Enormous! Re-analyzing 1000 files could take hours
+  # Cost impact: Critical! Saves $$$ on AI API calls
+  #
+  # Note: Can be overridden with --no-cache CLI flag
   enabled: true
   
-  # Cache directory location (relative or absolute path)
+  # ----------------------------------------------------------------------------
+  # directory: Cache storage location
+  # ----------------------------------------------------------------------------
+  # Type: String (path)
+  # Default: ".airganizer_cache"
+  #
+  # Description:
+  #   Directory where cache files are stored. Can be relative (to source dir)
+  #   or absolute path. Cache includes JSON files for each stage's results.
+  #
+  # Path types:
+  #   - Relative: ".airganizer_cache" (default, in source directory)
+  #   - Absolute: "/tmp/airganizer_cache", "~/cache/airganizer"
+  #
+  # Typical values:
+  #   - ".airganizer_cache": Default, keeps cache with source files
+  #   - ".cache": Common hidden directory name
+  #   - "/tmp/airganizer_cache": Temporary cache (deleted on reboot)
+  #   - "~/cache/airganizer": Shared cache location
+  #
+  # Storage requirements:
+  #   - Small: ~100-500 KB for 1000 files
+  #   - Medium: ~1-5 MB for 10,000 files
+  #   - Large: ~10-50 MB for 100,000 files
+  #
+  # Use cases:
+  #   - ".airganizer_cache": Keep cache with organized files
+  #   - "/tmp": Disposable cache for one-time organization
+  #   - "~/cache": Centralized cache across multiple projects
+  #
+  # Note: Can be overridden with --cache-dir CLI flag
+  # Security: Cache may contain file analysis data, keep secure
   directory: ".airganizer_cache"
-  
-  # Cache time-to-live in hours (entries older than this are considered stale)
-  ttl_hours: 24
 
-# AI Model configuration
+# ============================================================================
+# SECTION 4: AI MODEL CONFIGURATION
+# ============================================================================
+# Controls AI model discovery, selection, and provider configuration
+# This is the heart of AIrganizer - determines which AI models analyze your files
+
 models:
-  # Model selection mode:
-  # - "local_only": Use only local models (Ollama, etc.)
-  # - "online_only": Use only online models (OpenAI, Anthropic, etc.)
-  # - "mixed": Use both local and online models
+  # ----------------------------------------------------------------------------
+  # model_mode: Which types of AI models to use
+  # ----------------------------------------------------------------------------
+  # Type: String (enum)
+  # Options: "online_only", "local_only", "mixed"
+  # Default: "mixed"
+  #
+  # Description:
+  #   Controls which categories of AI models are available for file analysis.
+  #   Determines whether to use cloud APIs, local models, or both.
+  #
+  # Mode descriptions:
+  #   - "online_only": Use only cloud-based models (OpenAI, Anthropic)
+  #     + Highest quality AI analysis
+  #     + Latest models with vision capabilities
+  #     - Requires internet connection
+  #     - Costs money per API call
+  #     - Sends file data to external services
+  #
+  #   - "local_only": Use only local models (Ollama, llamacpp)
+  #     + Complete privacy, no data leaves your machine
+  #     + No API costs, unlimited usage
+  #     + Works offline
+  #     - Requires powerful hardware (16GB+ RAM recommended)
+  #     - Slower analysis speed
+  #     - Lower quality than GPT-4/Claude
+  #
+  #   - "mixed": Use both online and local models (recommended)
+  #     + Best of both worlds
+  #     + AI orchestrator chooses best model per file type
+  #     + Can optimize for cost (local for simple files, online for complex)
+  #     - Requires configuration of both providers
+  #
+  # Typical usage patterns:
+  #   - "mixed": Most users, balances cost/quality/privacy
+  #   - "online_only": Best quality, willing to pay API costs
+  #   - "local_only": Privacy-focused, sensitive files, or offline use
+  #
+  # Hardware requirements for local_only:
+  #   - Minimum: 16GB RAM, 4-core CPU
+  #   - Recommended: 32GB RAM, 8-core CPU, GPU
+  #   - Vision models: +8GB RAM for image analysis
   model_mode: "mixed"
   
-  # Model discovery method:
-  # - "auto": Automatically enumerate available models from providers
-  # - "config": Use only models explicitly defined below
-  # - "local_download": Auto-discover local models and download if needed
+  # ----------------------------------------------------------------------------
+  # discovery_method: How to discover available AI models
+  # ----------------------------------------------------------------------------
+  # Type: String (enum)
+  # Options: "auto", "config", "local_enumerate", "local_download"
+  # Default: "auto"
+  #
+  # Description:
+  #   Determines how AIrganizer finds and configures AI models. Different
+  #   methods offer different levels of automation vs control.
+  #
+  # Method descriptions:
+  #
+  #   "auto" (Recommended - Zero Configuration):
+  #     - Automatically discovers models from all configured providers
+  #     - Connects to OpenAI/Anthropic APIs to list available models
+  #     - Enumerates locally installed Ollama models
+  #     - AI orchestrator creates optimal MIME→model mapping
+  #     - Requires only API keys, no model configuration needed
+  #     Use when: You want the simplest setup
+  #
+  #   "config" (Manual Control):
+  #     - Uses only models explicitly listed in configuration
+  #     - No automatic discovery or API calls for model listing
+  #     - You specify exactly which models are available
+  #     - AI still creates MIME→model mapping from your list
+  #     Use when: You want precise control over which models are used
+  #
+  #   "local_enumerate" (Offline Mode):
+  #     - Discovers only locally installed Ollama models
+  #     - No internet required, no API calls
+  #     - Skips all online providers
+  #     - Implicitly sets model_mode to "local_only"
+  #     Use when: Complete offline operation, privacy-focused
+  #
+  #   "local_download" (Automatic Setup):
+  #     - Discovers local models AND auto-downloads missing ones
+  #     - Downloads models specified in auto_download_models
+  #     - Downloads additional models needed by MIME mapping
+  #     - Sets up complete local environment automatically
+  #     Use when: First-time setup, automated deployment, Docker
+  #
+  # Comparison table:
+  #   Method           | Internet | API Keys | Auto-download | Use Case
+  #   -----------------|----------|----------|---------------|------------------
+  #   auto             | Yes      | Yes      | No            | Normal use
+  #   config           | Maybe    | Yes      | No            | Manual control
+  #   local_enumerate  | No       | No       | No            | Offline/privacy
+  #   local_download   | Yes*     | No       | Yes           | First-time setup
+  #   * Only for downloading models
+  #
+  # Performance characteristics:
+  #   - "auto": ~5-10 seconds startup (API calls to list models)
+  #   - "config": Instant startup (no discovery)
+  #   - "local_enumerate": ~1 second startup (local API only)
+  #   - "local_download": ~5-60 minutes first run (downloads models)
   discovery_method: "auto"
   
   # ============================================================================
-  # PROVIDER CREDENTIALS (defined once)
+  # PROVIDER CREDENTIALS
   # ============================================================================
+  # Configure each AI provider once, credentials shared across all models
   
+  # ----------------------------------------------------------------------------
   # OpenAI Configuration
+  # ----------------------------------------------------------------------------
   openai:
-    # API key (or set OPENAI_API_KEY environment variable)
+    # --------------------------------------------------------------------------
+    # api_key_env: Environment variable containing OpenAI API key
+    # --------------------------------------------------------------------------
+    # Type: String (environment variable name)
+    # Default: "OPENAI_API_KEY"
+    #
+    # Description:
+    #   Name of the environment variable that contains your OpenAI API key.
+    #   This is the PREFERRED method for API key configuration (secure).
+    #
+    # Setup:
+    #   export OPENAI_API_KEY="sk-proj-..."
+    #
+    # Security best practice:
+    #   - Use environment variables (this method)
+    #   - Never commit API keys to version control
+    #   - Use different keys for development/production
+    #
+    # Getting an API key:
+    #   1. Sign up at https://platform.openai.com
+    #   2. Go to https://platform.openai.com/api-keys
+    #   3. Create new secret key
+    #   4. Export: export OPENAI_API_KEY="sk-proj-..."
     api_key_env: "OPENAI_API_KEY"
-    api_key: ""  # Or specify directly (not recommended for security)
     
-    # Auto-enumerate models from OpenAI API (when discovery_method is "auto")
+    # --------------------------------------------------------------------------
+    # api_key: Direct API key (NOT RECOMMENDED for security)
+    # --------------------------------------------------------------------------
+    # Type: String
+    # Default: "" (empty, use environment variable instead)
+    #
+    # Description:
+    #   Hardcoded API key. Only use for testing, never commit to git.
+    #   Leave empty to use api_key_env (recommended).
+    #
+    # Security warning:
+    #   DO NOT put your actual API key here if you're committing to git!
+    #   Use api_key_env and environment variables instead.
+    api_key: ""
+    
+    # --------------------------------------------------------------------------
+    # auto_enumerate: Automatically discover OpenAI models
+    # --------------------------------------------------------------------------
+    # Type: Boolean
+    # Default: true
+    #
+    # Description:
+    #   When true (and discovery_method is "auto"), queries OpenAI API to get
+    #   list of available models. When false, uses only models listed below.
+    #
+    # Typical values:
+    #   - true: Recommended, always uses latest available models
+    #   - false: Manual control, use specific models list
+    #
+    # API call: Makes one request to /v1/models endpoint
+    # Performance: Adds ~1-2 seconds to startup
     auto_enumerate: true
     
-    # Optional: Specify which models to use (if empty, all available models are used)
-    # Leave empty for automatic enumeration
+    # --------------------------------------------------------------------------
+    # models: Explicitly specify which OpenAI models to use
+    # --------------------------------------------------------------------------
+    # Type: List of strings
+    # Default: [] (empty, discover automatically)
+    #
+    # Description:
+    #   Manual list of OpenAI models to use. Only used when auto_enumerate
+    #   is false or discovery_method is "config". Leave empty for auto-discovery.
+    #
+    # Available OpenAI models (as of Jan 2026):
+    #   Text + Vision:
+    #     - "gpt-4o" (Recommended - fastest, multimodal)
+    #     - "gpt-4o-mini" (Cheaper, good quality)
+    #     - "gpt-4-turbo" (High quality, slower)
+    #     - "gpt-4-vision-preview" (Older vision model)
+    #   
+    #   Text only:
+    #     - "gpt-4" (High quality text)
+    #     - "gpt-3.5-turbo" (Fast, budget option)
+    #
+    # Pricing considerations (approximate):
+    #   - gpt-4o: $2.50 per 1M input tokens (~$0.01 per file)
+    #   - gpt-4-turbo: $10 per 1M input tokens (~$0.04 per file)
+    #   - gpt-3.5-turbo: $0.50 per 1M input tokens (~$0.002 per file)
+    #
+    # Example configurations:
+    #   Best quality: ["gpt-4o", "gpt-4-turbo"]
+    #   Budget: ["gpt-3.5-turbo", "gpt-4o-mini"]
+    #   Vision only: ["gpt-4o", "gpt-4-vision-preview"]
     models: []
-    # Example: Manually specify models
-    # models:
-    #   - "gpt-4-turbo-preview"
-    #   - "gpt-4-vision-preview"
-    #   - "gpt-3.5-turbo"
   
+  # ----------------------------------------------------------------------------
   # Anthropic Configuration
+  # ----------------------------------------------------------------------------
   anthropic:
-    # API key (or set ANTHROPIC_API_KEY environment variable)
+    # --------------------------------------------------------------------------
+    # api_key_env: Environment variable containing Anthropic API key
+    # --------------------------------------------------------------------------
+    # Type: String (environment variable name)
+    # Default: "ANTHROPIC_API_KEY"
+    #
+    # Description:
+    #   Name of the environment variable that contains your Anthropic API key.
+    #
+    # Setup:
+    #   export ANTHROPIC_API_KEY="sk-ant-..."
+    #
+    # Getting an API key:
+    #   1. Sign up at https://console.anthropic.com
+    #   2. Go to https://console.anthropic.com/settings/keys
+    #   3. Create new API key
+    #   4. Export: export ANTHROPIC_API_KEY="sk-ant-..."
     api_key_env: "ANTHROPIC_API_KEY"
-    api_key: ""  # Or specify directly (not recommended for security)
     
-    # Auto-enumerate models from Anthropic API (when discovery_method is "auto")
+    # --------------------------------------------------------------------------
+    # api_key: Direct API key (NOT RECOMMENDED)
+    # --------------------------------------------------------------------------
+    # Type: String
+    # Default: "" (empty, use environment variable)
+    #
+    # Security warning: Never commit API keys to version control
+    api_key: ""
+    
+    # --------------------------------------------------------------------------
+    # auto_enumerate: Automatically discover Anthropic models
+    # --------------------------------------------------------------------------
+    # Type: Boolean
+    # Default: true
+    #
+    # Description:
+    #   When true, queries Anthropic API for available models.
+    #   When false, uses models list below.
     auto_enumerate: true
     
-    # Optional: Specify which models to use
+    # --------------------------------------------------------------------------
+    # models: Explicitly specify which Anthropic models to use
+    # --------------------------------------------------------------------------
+    # Type: List of strings
+    # Default: [] (empty, discover automatically)
+    #
+    # Available Anthropic models (as of Jan 2026):
+    #   Claude 3.5:
+    #     - "claude-3-5-sonnet-20241022" (Recommended - best overall)
+    #   
+    #   Claude 3:
+    #     - "claude-3-opus-20240229" (Most capable, expensive)
+    #     - "claude-3-sonnet-20240229" (Balanced quality/cost)
+    #     - "claude-3-haiku-20240307" (Fast, budget)
+    #
+    # All Claude 3+ models support vision (image analysis)
+    #
+    # Pricing considerations (approximate):
+    #   - Claude 3.5 Sonnet: $3 per 1M input tokens (~$0.012 per file)
+    #   - Claude 3 Opus: $15 per 1M input tokens (~$0.06 per file)
+    #   - Claude 3 Haiku: $0.25 per 1M input tokens (~$0.001 per file)
+    #
+    # Example configurations:
+    #   Best quality: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"]
+    #   Budget: ["claude-3-haiku-20240307"]
+    #   Balanced: ["claude-3-5-sonnet-20241022", "claude-3-sonnet-20240229"]
     models: []
-    # Example:
-    # models:
-    #   - "claude-3-opus-20240229"
-    #   - "claude-3-sonnet-20240229"
-    #   - "claude-3-haiku-20240307"
   
+  # ----------------------------------------------------------------------------
   # Ollama Configuration (Local Models)
+  # ----------------------------------------------------------------------------
   ollama:
-    # Ollama API base URL
+    # --------------------------------------------------------------------------
+    # base_url: Ollama API endpoint
+    # --------------------------------------------------------------------------
+    # Type: String (URL)
+    # Default: "http://localhost:11434"
+    #
+    # Description:
+    #   URL of the Ollama API server. Usually runs locally on port 11434.
+    #
+    # Typical values:
+    #   - "http://localhost:11434": Default local installation
+    #   - "http://192.168.1.100:11434": Remote Ollama server on LAN
+    #   - "http://ollama.company.com:11434": Corporate Ollama server
+    #
+    # Setup Ollama:
+    #   1. Install: curl -fsSL https://ollama.com/install.sh | sh
+    #   2. Start: ollama serve
+    #   3. Verify: curl http://localhost:11434/api/tags
+    #
+    # Network configuration:
+    #   - Firewall: Ensure port 11434 is accessible
+    #   - Remote: Set OLLAMA_HOST environment variable
+    #   - Docker: Use host.docker.internal or network bridge
     base_url: "http://localhost:11434"
     
-    # Auto-enumerate locally available models
+    # --------------------------------------------------------------------------
+    # auto_enumerate: Automatically discover installed Ollama models
+    # --------------------------------------------------------------------------
+    # Type: Boolean
+    # Default: true
+    #
+    # Description:
+    #   When true, queries Ollama API to list installed models.
+    #   When false, uses models list below.
+    #
+    # Typical values:
+    #   - true: Recommended, uses all installed models
+    #   - false: Manual control, specify exact models
     auto_enumerate: true
     
-    # Optional: Models to auto-download if not present (when discovery_method is "local_download")
+    # --------------------------------------------------------------------------
+    # auto_download_models: Models to auto-download if not installed
+    # --------------------------------------------------------------------------
+    # Type: List of strings
+    # Default: ["llama3.2:latest", "llava:latest"]
+    #
+    # Description:
+    #   When discovery_method is "local_download", these models are automatically
+    #   downloaded if not already installed. Ignored for other discovery methods.
+    #
+    # Recommended models:
+    #   Vision (images/photos):
+    #     - "llava:latest" (~4.7 GB, good quality)
+    #     - "llama3.2-vision:latest" (~7.9 GB, better quality)
+    #     - "bakllava:latest" (~4.7 GB, alternative)
+    #   
+    #   Text (documents/code):
+    #     - "llama3.2:latest" (~2 GB, fast)
+    #     - "llama3.1:latest" (~4.7 GB, better)
+    #     - "mistral:latest" (~4.1 GB, good quality)
+    #   
+    #   Code analysis:
+    #     - "codellama:latest" (~3.8 GB)
+    #     - "deepseek-coder:latest" (~3.8 GB)
+    #
+    # Model sizes and system requirements:
+    #   2-4 GB models: 8GB RAM minimum, 16GB recommended
+    #   4-8 GB models: 16GB RAM minimum, 32GB recommended
+    #   8+ GB models: 32GB RAM minimum, GPU recommended
+    #
+    # Download time estimates (on 100 Mbps):
+    #   2 GB: ~3 minutes
+    #   4 GB: ~6 minutes
+    #   8 GB: ~12 minutes
+    #
+    # Storage requirements:
+    #   - Models stored in ~/.ollama/models/
+    #   - Typical setup: 10-30 GB total
+    #   - Full collection: 100+ GB
     auto_download_models:
       - "llama3.2:latest"
-      - "llava:latest"  # Vision model for images
+      - "llava:latest"
     
-    # Optional: Specify which local models to use
-    models: []
+    # --------------------------------------------------------------------------
+    # models: Explicitly specify which local models to use
+    # --------------------------------------------------------------------------
+    # Type: List of strings
+    # Default: [] (empty, discover automatically)
+    #
+    # Description:
+    #   Manual list of Ollama models to use. Only used when auto_enumerate
+    #   is false. Leave empty for auto-discovery.
+    #
+    # To see installed models: ollama list
+    # To install a model: ollama pull <model-name>
+    #
     # Example:
     # models:
     #   - "llama3.2:latest"
     #   - "llava:latest"
     #   - "mistral:latest"
+    models: []
   
   # ============================================================================
-  # MAPPING MODEL (AI Orchestrator)
+  # AI ORCHESTRATOR (Mapping Model)
   # ============================================================================
-  # The AI model used to decide which model should analyze which file type
+  
+  # ----------------------------------------------------------------------------
+  # mapping_model: AI model that decides which model analyzes which file
+  # ----------------------------------------------------------------------------
+  # Type: Object
+  # Required: Yes
+  #
+  # Description:
+  #   The "orchestrator" AI model that creates the MIME type → model mapping.
+  #   This model analyzes your available models and file types, then decides
+  #   which AI model should analyze each type of file for optimal results.
+  #
+  # Important:
+  #   This should be a capable, reliable model since it determines the entire
+  #   mapping strategy. A poor choice here affects all file analysis.
+  #
+  # Recommended models:
+  #   Best: "gpt-4o" (fast, smart, good reasoning)
+  #   Alternative: "claude-3-5-sonnet-20241022" (excellent reasoning)
+  #   Budget: "gpt-4o-mini" (cheaper, still good)
+  #   Local: "llama3.2:latest" (if online not available)
+  #
+  # How it works:
+  #   1. Orchestrator receives list of your available AI models
+  #   2. Receives list of MIME types found in your files
+  #   3. Analyzes each model's capabilities (text, vision, etc.)
+  #   4. Creates optimal mapping (e.g., images→vision model, text→text model)
+  #   5. Considers cost/quality trade-offs in mixed mode
+  #
+  # Cost: Single API call per pipeline run (~1000 tokens, ~$0.003)
   mapping_model:
-    provider: "openai"  # openai, anthropic, or ollama
-    model_name: "gpt-4"  # Model to use for orchestration
-    # Credentials are pulled from provider config above
-  
-  # ============================================================================
-  # MANUAL MODEL DEFINITIONS (Optional)
-  # ============================================================================
-  # Only used when discovery_method is "config"
-  # When using "auto" discovery, this section is ignored
-  config_models:
-    # Example: Manually define specific models with custom settings
-    - name: "gpt-4-vision-custom"
-      type: "online"
-      provider: "ollama"
-      model_name: "llama3.2:latest"
-      capabilities:
-        - "text"
-      description: "Custom local model configuration"
+    # Provider: "openai", "anthropic", or "ollama"
+    provider: "openai"
+    
+    # Model name: Must be available from the specified provider
+    # Credentials are automatically pulled from provider config above
+    model_name: "gpt-4o"
 
-# Stage 3 settings (AI File Analysis)
+# ============================================================================
+# SECTION 5: STAGE 3 - AI FILE ANALYSIS
+# ============================================================================
+# Controls how AI models analyze individual files
+
 stage3:
-  # Maximum number of files to analyze (0 = no limit, useful for testing)
+  # ----------------------------------------------------------------------------
+  # max_files: Maximum number of files to analyze
+  # ----------------------------------------------------------------------------
+  # Type: Integer
+  # Default: 0 (no limit)
+  # Range: 0-unlimited
+  #
+  # Description:
+  #   Limits the number of files analyzed by Stage 3. Useful for testing
+  #   configuration before processing thousands of files. Set to 0 for no limit.
+  #
+  # Typical values:
+  #   - 0: No limit, process all files (production use)
+  #   - 5-10: Quick test of configuration
+  #   - 50-100: Validate quality before full run
+  #   - 1000: Process in batches for very large collections
+  #
+  # Use cases:
+  #   - Testing: Start with 10 files to verify AI quality
+  #   - Sampling: Process 100 random files to gauge results
+  #   - Incremental: Process 1000 at a time for huge collections
+  #   - Cost control: Limit API spending during experimentation
+  #
+  # Note: Can be overridden with --max-files CLI flag
+  # Performance: 10 files ≈ 1-2 minutes, 100 files ≈ 10-20 minutes
   max_files: 0
   
+  # ----------------------------------------------------------------------------
   # AI generation parameters for file analysis
+  # ----------------------------------------------------------------------------
   ai:
-    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
-    max_tokens: 1000   # Maximum response length
-    timeout: 60        # API request timeout in seconds
+    # --------------------------------------------------------------------------
+    # temperature: Controls AI creativity vs determinism
+    # --------------------------------------------------------------------------
+    # Type: Float
+    # Default: 0.3
+    # Range: 0.0-2.0
+    #
+    # Description:
+    #   Controls randomness in AI responses. Lower = more deterministic/focused,
+    #   Higher = more creative/varied. For file organization, you want consistent,
+    #   factual descriptions, so lower values are recommended.
+    #
+    # Value guide:
+    #   - 0.0: Completely deterministic, same input = same output
+    #   - 0.1-0.3: Slightly varied, focused and factual (recommended for files)
+    #   - 0.5-0.7: Balanced creativity and consistency
+    #   - 0.8-1.0: More creative, less predictable
+    #   - 1.0-2.0: Highly creative, very varied responses
+    #
+    # For file organization:
+    #   - 0.3: Recommended default, consistent but natural descriptions
+    #   - 0.0: Maximum consistency, robotic descriptions
+    #   - 0.5: Slightly more creative filenames
+    #
+    # Examples of temperature effects:
+    #   At 0.0: "vacation_photo_beach_2023.jpg"
+    #   At 0.3: "family_beach_vacation_sunset_2023.jpg"
+    #   At 0.7: "golden_hour_beach_memories_summer_2023.jpg"
+    #
+    # Impact on file naming:
+    #   Lower = more consistent patterns, easier to predict
+    #   Higher = more varied names, potentially more descriptive
+    temperature: 0.3
+    
+    # --------------------------------------------------------------------------
+    # max_tokens: Maximum length of AI response
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 1000
+    # Range: 100-4096+ (model dependent)
+    #
+    # Description:
+    #   Maximum number of tokens (roughly words) in AI response. For file analysis,
+    #   we need: proposed filename (~20 tokens), description (~100-200 tokens),
+    #   tags (~50 tokens), plus JSON formatting (~50 tokens).
+    #
+    # Typical values:
+    #   - 500: Minimal, short descriptions (~$0.005 per file)
+    #   - 1000: Recommended, good detail (~$0.01 per file)
+    #   - 2000: Detailed, comprehensive (~$0.02 per file)
+    #
+    # Token usage breakdown (typical):
+    #   - Proposed filename: 10-30 tokens
+    #   - Description: 100-300 tokens
+    #   - Tags: 20-80 tokens
+    #   - JSON overhead: 50-100 tokens
+    #   Total: ~200-500 tokens average
+    #
+    # Cost implications (with GPT-4o at $2.50/1M tokens):
+    #   - 500 tokens: ~$0.00125 per file
+    #   - 1000 tokens: ~$0.0025 per file
+    #   - 2000 tokens: ~$0.005 per file
+    #   For 1000 files: $2.50-$5.00 total
+    #
+    # Performance implications:
+    #   Higher limits = slower API responses
+    #   Recommended: 1000 is sweet spot for quality/cost/speed
+    max_tokens: 1000
+    
+    # --------------------------------------------------------------------------
+    # timeout: API request timeout in seconds
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 60
+    # Range: 10-300
+    #
+    # Description:
+    #   Maximum time to wait for AI API response before timing out. If the
+    #   API doesn't respond within this time, the request fails and may retry.
+    #
+    # Typical values:
+    #   - 30: Fast timeout, good for responsive APIs
+    #   - 60: Recommended default, handles most cases
+    #   - 120: Generous timeout for slow connections/large files
+    #   - 300: Very patient, for complex analysis or slow networks
+    #
+    # Factors affecting response time:
+    #   - File size/complexity: Larger files = longer analysis
+    #   - Model choice: GPT-4 slower than GPT-3.5, local slower than online
+    #   - API load: Peak times may be slower
+    #   - Network: Slow internet = longer wait
+    #
+    # Failure behavior:
+    #   - Times out → Retry (up to max_retries)
+    #   - All retries fail → File marked as error
+    #   - Errors logged for review
+    #
+    # Recommendations:
+    #   - Fast internet + online models: 30-60 seconds
+    #   - Slow internet or local models: 120-180 seconds
+    #   - Vision models (images): 60-120 seconds (more processing)
+    timeout: 60
 
-# Stage 4 settings (Taxonomic Structure Planning)
+# ============================================================================
+# SECTION 6: STAGE 4 - TAXONOMIC STRUCTURE PLANNING
+# ============================================================================
+# Controls how AI generates the hierarchical directory structure
+
 stage4:
-  # Batch size for processing files (larger = more context, slower)
+  # ----------------------------------------------------------------------------
+  # batch_size: Number of files to process together
+  # ----------------------------------------------------------------------------
+  # Type: Integer
+  # Default: 100
+  # Range: 10-1000
+  #
+  # Description:
+  #   Number of files to include in each taxonomy generation request. Larger
+  #   batches give AI more context to create better organization structure,
+  #   but take longer and cost more per request.
+  #
+  # Typical values:
+  #   - 50: Small batches, faster processing (~$0.01 per batch)
+  #   - 100: Recommended default, good balance (~$0.02 per batch)
+  #   - 200: Large batches, better context (~$0.04 per batch)
+  #   - 500: Very large, comprehensive taxonomy (~$0.10 per batch)
+  #
+  # Batch size trade-offs:
+  #   Small (10-50):
+  #     + Faster processing
+  #     + Lower memory usage
+  #     + Cheaper per request
+  #     - Less context for AI
+  #     - May create fragmented taxonomy
+  #   
+  #   Large (200-500):
+  #     + More context for better decisions
+  #     + More coherent taxonomy
+  #     + Better category grouping
+  #     - Slower processing
+  #     - Higher cost per request
+  #     - May hit token limits
+  #
+  # For collections:
+  #   - <100 files: Use 50-100
+  #   - 100-1000 files: Use 100-200
+  #   - >1000 files: Use 200-500
+  #
+  # Performance: 100 files ≈ 30-60 seconds per batch
+  # Cost: ~$0.02-0.05 per 100 files with GPT-4o
   batch_size: 100
   
+  # ----------------------------------------------------------------------------
   # AI generation parameters for taxonomy creation
+  # ----------------------------------------------------------------------------
   ai:
-    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
-    max_tokens: 4000  # Maximum response length (needs to be large for taxonomy)
-    timeout: 120      # API request timeout in seconds
+    # --------------------------------------------------------------------------
+    # temperature: Controls taxonomy creativity
+    # --------------------------------------------------------------------------
+    # Type: Float
+    # Default: 0.3
+    # Range: 0.0-2.0
+    #
+    # Description:
+    #   Controls how creative vs consistent the taxonomy structure is.
+    #   Lower values create more predictable, standard categories.
+    #   Higher values create more unique, creative organization schemes.
+    #
+    # Value effects on taxonomy:
+    #   0.0-0.3: Standard categories (Photos, Documents, Videos, etc.)
+    #   0.4-0.6: Mix of standard and creative categories
+    #   0.7-1.0: Creative, unique categorization schemes
+    #
+    # Examples:
+    #   At 0.3:
+    #     Photos/
+    #       Vacation/
+    #       Family/
+    #     Documents/
+    #       Work/
+    #       Personal/
+    #
+    #   At 0.7:
+    #     Visual Memories/
+    #       Travel Adventures/
+    #       Family Moments/
+    #     Written Content/
+    #       Professional/
+    #       Life Admin/
+    #
+    # Recommendation: 0.3 for predictable, professional structure
+    temperature: 0.3
+    
+    # --------------------------------------------------------------------------
+    # max_tokens: Maximum taxonomy complexity
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 4000
+    # Range: 1000-8000+
+    #
+    # Description:
+    #   Maximum tokens for taxonomy response. Needs to be large enough to
+    #   describe the entire directory structure, file assignments, and reasoning.
+    #
+    # Token requirements scale with:
+    #   - Number of files: More files = more assignments
+    #   - Taxonomy depth: Deeper hierarchies = more structure
+    #   - Number of categories: More categories = more tokens
+    #
+    # Estimated token needs:
+    #   50 files, 3 levels: ~1500 tokens
+    #   100 files, 4 levels: ~3000 tokens
+    #   500 files, 5 levels: ~8000 tokens
+    #   1000+ files: May need multiple batches
+    #
+    # Typical values:
+    #   - 2000: Small collections (<100 files)
+    #   - 4000: Recommended default (100-500 files)
+    #   - 6000: Large collections (500-1000 files)
+    #   - 8000: Very large (adjust batch_size if hitting limit)
+    #
+    # If you hit token limit:
+    #   Solution 1: Reduce batch_size (process in smaller groups)
+    #   Solution 2: Increase max_tokens (costs more)
+    #   Solution 3: Simplify taxonomy (reduce depth/categories)
+    #
+    # Cost: 4000 tokens ≈ $0.01 per batch with GPT-4o
+    max_tokens: 4000
+    
+    # --------------------------------------------------------------------------
+    # timeout: API request timeout for taxonomy generation
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 120
+    # Range: 60-300
+    #
+    # Description:
+    #   Maximum wait time for taxonomy generation. This is longer than Stage 3
+    #   because creating a complete taxonomy is more complex and takes more time.
+    #
+    # Typical values:
+    #   - 60: Quick timeout for small batches
+    #   - 120: Recommended default, handles most batches
+    #   - 180: Large batches or slow connections
+    #   - 300: Very patient, for huge collections
+    #
+    # Factors affecting time:
+    #   - Batch size: 100 files ≈ 30-60 seconds
+    #   - Taxonomy complexity: Deep hierarchies take longer
+    #   - Model speed: GPT-4 varies, local models slower
+    #
+    # If timing out frequently:
+    #   Solution 1: Reduce batch_size
+    #   Solution 2: Increase timeout
+    #   Solution 3: Use faster model for mapping_model
+    timeout: 120
 
-# Stage 5 settings (Physical File Organization)
+# ============================================================================
+# SECTION 7: STAGE 5 - PHYSICAL FILE ORGANIZATION
+# ============================================================================
+# Controls how files are actually moved to their organized locations
+
 stage5:
-  # Overwrite existing files at destination
+  # ----------------------------------------------------------------------------
+  # overwrite: Overwrite existing files at destination
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: false
+  #
+  # Description:
+  #   Controls behavior when a file already exists at the destination path.
+  #   When false, existing files are never overwritten (safer).
+  #   When true, existing files are replaced (dangerous).
+  #
+  # Typical values:
+  #   - false: Recommended, preserves existing files
+  #   - true: Only use if you want to replace duplicates
+  #
+  # When false (recommended):
+  #   - Conflict detected → File renamed (e.g., file_1.txt, file_2.txt)
+  #   - Original file preserved
+  #   - New file added with numeric suffix
+  #   - All conflicts logged
+  #
+  # When true (dangerous):
+  #   - Conflict detected → Overwrite existing file
+  #   - Original file lost forever
+  #   - No backup created
+  #   - Use with caution!
+  #
+  # Use cases:
+  #   - false: Normal operation, preserve all files
+  #   - true: Intentionally replacing old versions with new
+  #
+  # Safety recommendation:
+  #   Always use false unless you specifically want to replace files.
+  #   Consider dry_run first to preview what would happen.
   overwrite: false
   
-  # Perform dry-run (simulate moves without actually moving files)
+  # ----------------------------------------------------------------------------
+  # dry_run: Preview mode without moving files
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: false
+  #
+  # Description:
+  #   When true, simulates all file moves without actually moving anything.
+  #   Shows what would happen, logs all operations, but doesn't modify filesystem.
+  #   Perfect for testing and validation before running for real.
+  #
+  # Typical values:
+  #   - false: Actually move files (normal operation)
+  #   - true: Preview only, no changes made
+  #
+  # When dry_run is true:
+  #   ✓ Shows proposed taxonomy structure
+  #   ✓ Lists all file moves
+  #   ✓ Identifies conflicts
+  #   ✓ Logs everything
+  #   ✗ No files actually moved
+  #   ✗ No directories created
+  #   ✗ No filesystem changes
+  #
+  # Recommended workflow:
+  #   1. First run with dry_run: true → Review output
+  #   2. Adjust configuration if needed
+  #   3. Second run with dry_run: false → Actually organize
+  #
+  # Output locations:
+  #   - Console: Shows all operations
+  #   - Logs: Complete record of would-be moves
+  #   - JSON output: Full detail via --output flag
+  #
+  # Use cases:
+  #   - Testing new configuration
+  #   - Validating taxonomy structure
+  #   - Previewing large organization job
+  #   - Checking for conflicts before committing
+  #
+  # Note: Can also enable via --dry-run CLI flag
+  # Performance: Dry run is just as fast as real run
   dry_run: false
 
-# AI Mapping settings (Stage 2 - MIME to Model mapping)
+# ============================================================================
+# SECTION 8: AI MAPPING SETTINGS (Stage 2)
+# ============================================================================
+# Controls how AI creates MIME type → model mapping
+
 mapping:
-  # AI generation parameters for MIME type mapping
+  # ----------------------------------------------------------------------------
+  # AI generation parameters for MIME-to-model mapping
+  # ----------------------------------------------------------------------------
   ai:
-    temperature: 0.3  # Creativity vs determinism (0.0-2.0)
-    max_tokens: 2000  # Maximum response length
-    timeout: 60       # API request timeout in seconds
+    # --------------------------------------------------------------------------
+    # temperature: Mapping strategy creativity
+    # --------------------------------------------------------------------------
+    # Type: Float
+    # Default: 0.3
+    # Range: 0.0-2.0
+    #
+    # Description:
+    #   Controls how the orchestrator AI decides which models analyze which
+    #   file types. Lower = more conservative, standard mappings.
+    #   Higher = more creative, experimental mappings.
+    #
+    # Value effects:
+    #   0.0-0.3: Conservative, obvious mappings
+    #     - Images → vision models
+    #     - Text → text models
+    #     - Standard, predictable choices
+    #
+    #   0.4-0.6: Balanced, considers nuances
+    #     - May use vision models for PDFs with images
+    #     - May choose different models for code vs prose
+    #
+    #   0.7-1.0: Creative, experimental
+    #     - Unusual model choices
+    #     - May try surprising combinations
+    #
+    # Recommendation: Keep at 0.3 for reliable, sensible mappings
+    temperature: 0.3
+    
+    # --------------------------------------------------------------------------
+    # max_tokens: Mapping explanation length
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 2000
+    # Range: 500-4000
+    #
+    # Description:
+    #   Maximum tokens for mapping response. Needs to cover:
+    #   - Mapping for each MIME type (50-100 tokens each)
+    #   - Reasoning for each choice (50-100 tokens each)
+    #   - JSON structure overhead
+    #
+    # Token requirements:
+    #   - 5 MIME types: ~500 tokens
+    #   - 10 MIME types: ~1000 tokens
+    #   - 20 MIME types: ~2000 tokens
+    #   - 50 MIME types: ~4000 tokens
+    #
+    # Typical values:
+    #   - 1000: Small variety of file types
+    #   - 2000: Recommended default, handles most cases
+    #   - 4000: Large variety of file types (50+ MIME types)
+    #
+    # This is a one-time cost per pipeline run
+    # Cost: ~$0.002-0.005 for entire mapping
+    max_tokens: 2000
+    
+    # --------------------------------------------------------------------------
+    # timeout: Mapping generation timeout
+    # --------------------------------------------------------------------------
+    # Type: Integer
+    # Default: 60
+    # Range: 30-180
+    #
+    # Description:
+    #   Maximum wait time for mapping generation. Usually quick since it's
+    #   a single API call with limited complexity.
+    #
+    # Typical values:
+    #   - 30: Quick timeout for small model lists
+    #   - 60: Recommended default
+    #   - 120: Slow connections or many MIME types
+    #
+    # Mapping is fast:
+    #   - Usually completes in 5-15 seconds
+    #   - One-time operation per pipeline run
+    #   - Cached for subsequent runs
+    #
+    # If timing out:
+    #   - Check internet connection
+    #   - Verify API key is valid
+    #   - Try different mapping_model
+    timeout: 60
+
+# ============================================================================
+# CONFIGURATION COMPLETE
+# ============================================================================
+# 
+# Next steps:
+#   1. Set API keys: export OPENAI_API_KEY="sk-..."
+#   2. Save this file as: config.yaml
+#   3. Test with: python main.py --config config.yaml --src ./test --dst ./out --max-files 5
+#   4. Review results, adjust parameters as needed
+#   5. Run full organization: python main.py --config config.yaml --src ./source --dst ./organized
+#
+# Documentation:
+#   - README.md: Project overview and quick start
+#   - USAGE.md: Complete CLI reference and examples
+#   - CONFIGURATION.md: Detailed parameter documentation
+#   - DEVELOPMENT.md: Architecture and contributing guide
+#
+# Support:
+#   - Issues: https://github.com/dynacylabs/airganizer/issues
+#   - Docs: https://github.com/dynacylabs/airganizer
+# ============================================================================
+
