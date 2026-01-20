@@ -8,14 +8,14 @@ import json
 import warnings
 from pathlib import Path
 
+# Import PIL first so we can reference it in warning filters
+from PIL import Image
+
 # Suppress PIL warnings about large images and truncated files
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 warnings.filterwarnings('ignore', message='Truncated File Read')
 warnings.filterwarnings('ignore', message='Possibly corrupted')
 warnings.filterwarnings('ignore', message='Unexpected slice length')
-
-# Must import PIL after setting up warning filters
-from PIL import Image
 
 from src.config import Config
 from src.stage1 import Stage1Scanner

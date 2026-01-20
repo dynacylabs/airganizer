@@ -9,14 +9,14 @@ import exifread
 from typing import Dict, Any, List, Tuple
 from pathlib import Path
 
+# Import PIL first so we can reference it in warning filters
+from PIL import Image
+
 # Suppress PIL warnings about large images and EXIF issues
-import PIL.Image
-warnings.filterwarnings('ignore', category=PIL.Image.DecompressionBombWarning)
+warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 warnings.filterwarnings('ignore', message='Truncated File Read')
 warnings.filterwarnings('ignore', message='Possibly corrupted')
 warnings.filterwarnings('ignore', message='Unexpected slice length')
-
-from PIL import Image
 
 
 logger = logging.getLogger(__name__)
