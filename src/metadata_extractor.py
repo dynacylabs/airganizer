@@ -4,10 +4,19 @@ import json
 import logging
 import subprocess
 import tempfile
+import warnings
 import exifread
-from PIL import Image
 from typing import Dict, Any, List, Tuple
 from pathlib import Path
+
+# Suppress PIL warnings about large images and EXIF issues
+import PIL.Image
+warnings.filterwarnings('ignore', category=PIL.Image.DecompressionBombWarning)
+warnings.filterwarnings('ignore', message='Truncated File Read')
+warnings.filterwarnings('ignore', message='Possibly corrupted')
+warnings.filterwarnings('ignore', message='Unexpected slice length')
+
+from PIL import Image
 
 
 logger = logging.getLogger(__name__)
