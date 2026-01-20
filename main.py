@@ -467,19 +467,6 @@ def main() -> int:
                         json.dump(output_data, f, indent=2)
                     logger.info("Stage 3 results saved")
             
-                # Update final summary
-                logger.info("")
-                logger.info("=" * 60)
-                logger.info("FINAL SUMMARY")
-                logger.info("=" * 60)
-                logger.info(f"Stage 1 - Files scanned: {stage2_result.stage1_result.total_files}")
-                logger.info(f"Stage 1 - MIME types: {len(stage2_result.stage1_result.unique_mime_types)}")
-                logger.info(f"Stage 2 - Models discovered: {len(stage2_result.available_models)}")
-                logger.info(f"Stage 2 - Model mappings: {len(stage2_result.mime_to_model_mapping)}")
-                logger.info(f"Stage 3 - Files analyzed: {stage3_result.total_analyzed}")
-                logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
-                logger.info("=" * 60)
-            
                 # Mark Stage 3 complete
                 progress_manager.complete_stage()
             
