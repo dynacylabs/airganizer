@@ -17,19 +17,28 @@ from src.cache import CacheManager
 from src.progress import ProgressManager
 
 
-def setup_logging(log_level: str, use_rich: bool = False) -> None:
+def setup_logging(log_level: str, use_rich: bool = False, progress_mode: bool = False) -> None:
     """
     Setup logging configuration.
     
     Args:
         log_level: Log level string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         use_rich: Whether to use Rich's logging handler for better formatting with progress bars
+        progress_mode: If True, don't add any handlers (will be added later for progress display)
     """
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
     
-    if use_rich:
+    if progress_mode:
+        # When using progress bars with integrated logging, don't add any handlers here
+        # The ProgressLoggingHandler will be added later to display logs in the progress panel
+        logging.basicConfig(
+            level=numeric_level,
+            format='%(message)s',
+            handlers=[]  # No handlers - will be added after progress manager is created
+        )
+    elif use_rich:
         # Use Rich's logging handler to integrate with progress bars
         from rich.logging import RichHandler
         logging.basicConfig(
@@ -217,10 +226,12 @@ def main() -> int:
         else:
             log_level = config.log_level
         
-        # Don't use Rich logging when we'll be using progress display
-        # (progress display has its own log handler)
-        use_rich_logging = False  # Disabled - using progress display logging instead
-        setup_logging(log_level, use_rich=use_rich_logging)
+        # Determine if progress bars will be enabled (disabled in debug mode)
+        progress_will_be_enabled = not args.debug
+        
+        # If progress bars are enabled, use progress_mode to avoid duplicate log handlers
+        # The ProgressLoggingHandler will be added after ProgressManager is created
+        setup_logging(log_level, use_rich=False, progress_mode=progress_will_be_enabled)
         
         logger = logging.getLogger(__name__)
         logger.info("AI File Organizer starting...")
