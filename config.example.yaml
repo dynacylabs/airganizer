@@ -12,6 +12,123 @@
 
 general:
   # ----------------------------------------------------------------------------
+  # garbage_folder: Folder name for garbage files
+  # ----------------------------------------------------------------------------
+  # Type: String
+  # Default: "_garbage"
+  #
+  # Description:
+  #   Name of the folder where files identified as garbage will be moved.
+  #   This folder will be created in the destination directory root.
+  #   The AI identifies garbage files as: temp files, cache, corrupted data,
+  #   screenshots of errors, test files, or clearly useless content.
+  #
+  # Typical values:
+  #   - "_garbage": Default, underscore prefix keeps it at top of sorted lists
+  #   - "trash": Simple and clear
+  #   - "junk": Alternative name
+  #   - "to-delete": Makes the intent obvious
+  #   - "": Empty string disables garbage detection (not recommended)
+  #
+  # Use cases:
+  #   - Separate review: Keep garbage separate for manual review before deletion
+  #   - Bulk cleanup: Easy to find and delete all garbage at once
+  #   - Organization: Keep destination clean from temporary/useless files
+  #
+  # Note: Set to empty string "" to disable garbage detection entirely.
+  #       Files that would be marked as garbage will be organized normally.
+  garbage_folder: "_garbage"
+  
+  # ----------------------------------------------------------------------------
+  # enable_garbage_detection: Enable AI garbage file detection
+  # ----------------------------------------------------------------------------
+  # Type: Boolean
+  # Default: true
+  #
+  # Description:
+  #   Controls whether the AI should identify and separate garbage files.
+  #   When enabled (true), the AI analyzes each file and marks obvious junk,
+  #   temporary, corrupted, or useless files which are then moved to the
+  #   garbage folder. When disabled (false), all files are organized normally.
+  #
+  # Examples of garbage files:
+  #   - Temp/cache files: screenshot_temp_123.png, cache_001.dat
+  #   - Corrupted files: broken.jpg, corrupted_data.bin
+  #   - Test files: test.txt, sample_data.csv
+  #   - Error screenshots: error_screen.png, crash_dump.png
+  #   - Duplicate junk: Copy of Copy of file.doc
+  #
+  # Typical values:
+  #   - true: Recommended, helps keep destination clean (default)
+  #   - false: Organize everything, don't filter garbage
+  #
+  # Use cases:
+  #   - Cleanup projects: Enable to automatically filter junk
+  #   - Preserve everything: Disable if you want to keep all files
+  #   - Conservative mode: Disable if unsure about AI judgment
+  #
+  # Performance impact: Minimal, adds one field to AI analysis
+  # Cost impact: Negligible, adds ~10 tokens per file
+  #
+  # Note: Requires garbage_folder to be set. If garbage_folder is empty,
+  #       garbage detection is disabled regardless of this setting.
+  enable_garbage_detection: true
+  
+  # ----------------------------------------------------------------------------
+  # video_frames: Number of frames to extract from videos for AI analysis
+  # ----------------------------------------------------------------------------
+  # Type: Integer
+  # Default: 4
+  # Range: 1-10 (recommended: 3-5)
+  #
+  # Description:
+  #   Controls how many frames are extracted from video files for visual
+  #   analysis by AI models with vision capabilities. Frames are extracted
+  #   at deterministic intervals (10%, 35%, 65%, 90% of video duration) to
+  #   ensure consistent results across runs.
+  #
+  # Frame extraction details:
+  #   - Requires ffmpeg installed on system
+  #   - Frames extracted as high-quality JPEG images
+  #   - Extraction is deterministic (same video = same frames every time)
+  #   - Frames sent to vision-capable models (GPT-4o, Claude, LLaVA, etc.)
+  #   - Also extracts video metadata: duration, resolution, codec, fps
+  #
+  # Typical values:
+  #   - 1: Single frame from middle of video (fastest, minimal cost)
+  #   - 3: Beginning, middle, end (balanced)
+  #   - 4: Good coverage for most videos (recommended, default)
+  #   - 5-6: Detailed analysis for longer videos
+  #   - 8-10: Very thorough analysis (higher cost)
+  #
+  # Use cases:
+  #   - Short clips (< 1 min): 2-3 frames sufficient
+  #   - Medium videos (1-10 min): 4-5 frames recommended
+  #   - Long videos (> 10 min): 6-8 frames for better coverage
+  #   - Testing/development: 1-2 frames to minimize cost
+  #
+  # Performance impact:
+  #   - Each frame adds ~3-5 seconds to processing time
+  #   - More frames = more accurate AI analysis
+  #   - Frames are temporarily extracted and deleted after analysis
+  #
+  # Cost impact (vision-capable models):
+  #   - Each frame counts as an image in API request
+  #   - GPT-4o: ~$0.001-0.003 per frame (varies by resolution)
+  #   - Claude: ~$0.004-0.008 per frame
+  #   - Ollama (local): Free, but slower with more frames
+  #   - 4 frames ≈ $0.004-0.032 per video with cloud APIs
+  #
+  # Example configurations:
+  #   Cost-conscious: 2 frames
+  #   Balanced (default): 4 frames
+  #   Thorough: 6-8 frames
+  #
+  # Note: If ffmpeg is not installed, video analysis falls back to
+  #       metadata-only (duration, resolution, codec) without frames.
+  video_frames: 4
+  
+  # ----------------------------------------------------------------------------
   # log_level: Controls the verbosity of logging output
   # ----------------------------------------------------------------------------
   # Type: String (enum)

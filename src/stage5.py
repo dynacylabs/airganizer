@@ -236,6 +236,11 @@ class Stage5Processor:
         # Get Stage 1 result for excluded files
         stage1_result = stage4_result.stage3_result.stage2_result.stage1_result
         
+        # Calculate garbage and organized files
+        garbage_folder = self.config.get('general.garbage_folder', '_garbage')
+        garbage_files = sum(1 for a in stage4_result.file_assignments if a.target_path == garbage_folder)
+        organized_files = len(stage4_result.file_assignments) - garbage_files
+        
         # Calculate total operations
         total_assignments = len(stage4_result.file_assignments)
         total_excluded = len(stage1_result.excluded_files)
@@ -243,7 +248,8 @@ class Stage5Processor:
         total_operations = total_assignments + total_excluded + total_errors
         
         logger.info(f"Total operations: {total_operations}")
-        logger.info(f"  - Organized files: {total_assignments}")
+        logger.info(f"  - Organized files: {organized_files}")
+        logger.info(f"  - Garbage files: {garbage_files}")
         logger.info(f"  - Excluded files: {total_excluded}")
         logger.info(f"  - Error files: {total_errors}")
         
@@ -279,13 +285,17 @@ class Stage5Processor:
             target_dir = destination_root_path / assignment.target_path
             target_file = target_dir / assignment.proposed_filename
             
+            # Determine category based on target path
+            garbage_folder = self.config.get('general.garbage_folder', '_garbage')
+            category = "garbage" if assignment.target_path == garbage_folder else "organized"
+            
             # Create operation record
             operation = MoveOperation(
                 source_path=assignment.file_path,
                 target_path=assignment.target_path,
                 target_filename=assignment.proposed_filename,
                 full_target=str(target_file),
-                category="organized"
+                category=category
             )
             
             # Create target directory
@@ -454,6 +464,7 @@ class Stage5Processor:
         logger.info("Stage 5 complete!")
         logger.info(f"  Total files: {result.total_files}")
         logger.info(f"  Organized moves: {result.successful_moves}")
+        logger.info(f"  Garbage moves: {result.garbage_moves}")
         logger.info(f"  Excluded moves: {result.excluded_moves}")
         logger.info(f"  Error moves: {result.error_moves}")
         logger.info(f"  Failed moves: {result.failed_moves}")

@@ -96,6 +96,7 @@ class Stage3Processor:
                 proposed_filename=analysis_result['proposed_filename'],
                 description=analysis_result['description'],
                 tags=analysis_result['tags'],
+                is_garbage=analysis_result.get('is_garbage', False),
                 analysis_timestamp=datetime.now().isoformat()
             )
             

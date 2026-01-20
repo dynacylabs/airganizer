@@ -361,18 +361,53 @@ Important:
         logger.debug("Retrieving unified file data from Stage 3...")
         files_data = stage3_result.get_all_unified_data()
         
-        # Filter out files without analysis
-        files_with_analysis = [
-            f for f in files_data
-            if f.get('analysis') and not f['analysis'].get('error')
-        ]
-        logger.debug(f"Filtered files: {len(files_data)} total -> {len(files_with_analysis)} with analysis")
+        # Check if garbage detection is enabled
+        garbage_detection_enabled = self.config.get('general.enable_garbage_detection', True)
+        garbage_folder = self.config.get('general.garbage_folder', '_garbage')
+        process_garbage = garbage_detection_enabled and garbage_folder
+        
+        # Filter out files without analysis and optionally garbage files
+        if process_garbage:
+            files_with_analysis = [
+                f for f in files_data
+                if f.get('analysis') and not f['analysis'].get('error') and not f['analysis'].get('is_garbage', False)
+            ]
+            
+            # Track garbage files separately
+            garbage_files = [
+                f for f in files_data
+                if f.get('analysis') and f['analysis'].get('is_garbage', False)
+            ]
+        else:
+            # If garbage detection disabled, treat all files normally
+            files_with_analysis = [
+                f for f in files_data
+                if f.get('analysis') and not f['analysis'].get('error')
+            ]
+            garbage_files = []
+        
+        logger.debug(f"Filtered files: {len(files_data)} total -> {len(files_with_analysis)} with analysis, {len(garbage_files)} garbage")
         
         logger.info(f"Total files: {len(files_data)}")
         logger.info(f"Files with analysis: {len(files_with_analysis)}")
+        if process_garbage:
+            logger.info(f"Garbage files: {len(garbage_files)}")
+        
+        # Assign garbage files to garbage folder
+        if process_garbage and garbage_files:
+            logger.info(f"Assigning {len(garbage_files)} garbage files to '{garbage_folder}' folder")
+            for file_data in garbage_files:
+                analysis = file_data.get('analysis', {})
+                assignment = FileAssignment(
+                    file_path=file_data['file_info']['file_path'],
+                    target_path=garbage_folder,
+                    proposed_filename=analysis.get('proposed_filename', file_data['file_info']['file_name']),
+                    reasoning=f"Identified as garbage: {analysis.get('description', 'No description')}"
+                )
+                result.add_file_assignment(assignment)
         
         if not files_with_analysis:
-            logger.warning("No files with successful analysis. Cannot create taxonomy.")
+            logger.warning("No files with successful analysis (excluding garbage). Cannot create taxonomy.")
             return result
         
         # Get the mapping model for taxonomy creation

@@ -81,7 +81,23 @@ class AIModelInterface:
         """
         file_name = Path(file_path).name
         
-        prompt = f"""You are analyzing a file for organization purposes. Please analyze this file and provide:
+        # Check if this is a video file
+        is_video = mime_type.startswith('video/')
+        
+        if is_video:
+            prompt = f"""You are analyzing a video file for organization purposes. Please analyze this video and provide:
+
+1. A proposed new filename (descriptive, concise, keep extension)
+2. A detailed description of the video's contents
+3. Relevant tags/keywords for categorization
+
+File Information:
+- Current filename: {file_name}
+- MIME type: {mime_type}
+- File size: {metadata.get('file_size', 'unknown')} bytes
+"""
+        else:
+            prompt = f"""You are analyzing a file for organization purposes. Please analyze this file and provide:
 
 1. A proposed new filename (descriptive, concise, keep extension)
 2. A detailed description of the file's contents
@@ -97,11 +113,54 @@ File Information:
         if metadata.get('exif_data'):
             prompt += f"\n- EXIF data: {json.dumps(metadata['exif_data'], indent=2)}"
         
+        # Add video metadata note if present
+        if is_video and metadata.get('metadata'):
+            video_meta = metadata['metadata']
+            if 'duration' in video_meta or 'resolution' in video_meta:
+                prompt += f"\n\nVideo Properties:"
+                if 'duration' in video_meta:
+                    prompt += f"\n- Duration: {video_meta['duration']}"
+                if 'resolution' in video_meta:
+                    prompt += f"\n- Resolution: {video_meta['resolution']}"
+                if 'fps' in video_meta:
+                    prompt += f"\n- Frame rate: {video_meta['fps']} fps"
+                if 'video_codec' in video_meta:
+                    prompt += f"\n- Video codec: {video_meta['video_codec']}"
+                prompt += f"\n\nNote: The images shown are frames extracted at different points in the video to help you understand the content."
+        
         # Add specific metadata
         if metadata.get('metadata'):
             prompt += f"\n- Additional metadata: {json.dumps(metadata['metadata'], indent=2)}"
         
-        prompt += """
+        # Check if garbage detection is enabled
+        garbage_detection_enabled = self.config.get('general.enable_garbage_detection', True)
+        garbage_folder = self.config.get('general.garbage_folder', '_garbage')
+        include_garbage = garbage_detection_enabled and garbage_folder
+        
+        if include_garbage:
+            prompt += """
+
+Please respond in JSON format with the following structure:
+{
+  "proposed_filename": "descriptive-name-with-extension",
+  "description": "Detailed description of what's in this file",
+  "tags": ["tag1", "tag2", "tag3"],
+  "is_garbage": false
+}
+
+Important:
+- Keep the original file extension
+- Make the filename descriptive but concise (max 50 chars)
+- Description should be 2-3 sentences
+- Provide 3-7 relevant tags
+- Tags should be lowercase, single words or hyphenated phrases
+- Set is_garbage to true if the file is junk/trash/temporary/corrupted/useless
+  Examples of garbage: temp files, cache files, corrupted images, screenshots of errors,
+  duplicate files with no value, system files, test files, or clearly useless content
+- Set is_garbage to false for legitimate files even if low quality
+"""
+        else:
+            prompt += """
 
 Please respond in JSON format with the following structure:
 {
@@ -160,6 +219,12 @@ Important:
             if isinstance(result['tags'], str):
                 result['tags'] = [tag.strip() for tag in result['tags'].split(',')]
             
+            # Ensure is_garbage is boolean (default to False if missing)
+            if 'is_garbage' not in result:
+                result['is_garbage'] = False
+            elif isinstance(result['is_garbage'], str):
+                result['is_garbage'] = result['is_garbage'].lower() in ('true', 'yes', '1')
+            
             return result
             
         except Exception as e:
@@ -170,7 +235,8 @@ Important:
             return {
                 'proposed_filename': Path(response_text).name if response_text else 'unknown.txt',
                 'description': 'Failed to analyze file',
-                'tags': ['unanalyzed']
+                'tags': ['unanalyzed'],
+                'is_garbage': False
             }
     
     def _analyze_with_openai(
@@ -221,6 +287,28 @@ Important:
                 logger.debug(f"Added image to OpenAI request")
             except Exception as e:
                 logger.warning(f"Could not read image file: {e}")
+        
+        # Add video frames if supported and file is a video
+        elif 'image' in model.capabilities and mime_type.startswith('video/'):
+            try:
+                from .metadata_extractor import extract_video_frames
+                num_frames = self.config.get('general.video_frames', 4)
+                frames = extract_video_frames(Path(file_path), num_frames=num_frames)
+                
+                if frames:
+                    logger.debug(f"Extracted {len(frames)} frames from video for analysis")
+                    for idx, frame_data in enumerate(frames):
+                        messages[0]['content'].append({
+                            'type': 'image_url',
+                            'image_url': {
+                                'url': f'data:image/jpeg;base64,{frame_data}'
+                            }
+                        })
+                    logger.debug(f"Added {len(frames)} video frames to OpenAI request")
+                else:
+                    logger.debug("No frames extracted, using metadata only for video")
+            except Exception as e:
+                logger.warning(f"Could not extract video frames: {e}")
         
         # If only text content, simplify message structure
         if len(messages[0]['content']) == 1:
@@ -300,6 +388,30 @@ Important:
             except Exception as e:
                 logger.warning(f"Could not read image file: {e}")
         
+        # Add video frames if supported and file is a video
+        elif 'image' in model.capabilities and mime_type.startswith('video/'):
+            try:
+                from .metadata_extractor import extract_video_frames
+                num_frames = self.config.get('general.video_frames', 4)
+                frames = extract_video_frames(Path(file_path), num_frames=num_frames)
+                
+                if frames:
+                    logger.debug(f"Extracted {len(frames)} frames from video for analysis")
+                    for frame_data in frames:
+                        content.append({
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': 'image/jpeg',
+                                'data': frame_data
+                            }
+                        })
+                    logger.debug(f"Added {len(frames)} video frames to Anthropic request")
+                else:
+                    logger.debug("No frames extracted, using metadata only for video")
+            except Exception as e:
+                logger.warning(f"Could not extract video frames: {e}")
+        
         # Add text prompt
         content.append({
             'type': 'text',
@@ -367,6 +479,22 @@ Important:
                 logger.debug(f"Added image to Ollama request")
             except Exception as e:
                 logger.warning(f"Could not read image file: {e}")
+        
+        # Add video frames if supported and file is a video
+        elif 'image' in model.capabilities and mime_type.startswith('video/'):
+            try:
+                from .metadata_extractor import extract_video_frames
+                num_frames = self.config.get('general.video_frames', 4)
+                frames = extract_video_frames(Path(file_path), num_frames=num_frames)
+                
+                if frames:
+                    logger.debug(f"Extracted {len(frames)} frames from video for analysis")
+                    payload['images'] = frames
+                    logger.debug(f"Added {len(frames)} video frames to Ollama request")
+                else:
+                    logger.debug("No frames extracted, using metadata only for video")
+            except Exception as e:
+                logger.warning(f"Could not extract video frames: {e}")
         
         try:
             response = requests.post(

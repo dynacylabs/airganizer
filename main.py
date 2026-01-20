@@ -586,6 +586,7 @@ def main() -> int:
                     logger.info(f"Stage 4 - Categories created: {stage4_result.total_categories}")
                     logger.info(f"Stage 4 - Files assigned: {stage4_result.total_assigned}")
                     logger.info(f"Stage 5 - Organized files: {stage5_result.successful_moves}")
+                    logger.info(f"Stage 5 - Garbage files: {stage5_result.garbage_moves}")
                     logger.info(f"Stage 5 - Excluded files: {stage5_result.excluded_moves}")
                     logger.info(f"Stage 5 - Error files: {stage5_result.error_moves}")
                     logger.info(f"Stage 5 - Move failures: {stage5_result.failed_moves}")

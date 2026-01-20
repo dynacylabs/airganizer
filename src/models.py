@@ -188,6 +188,7 @@ class FileAnalysis:
     proposed_filename: str
     description: str
     tags: List[str]
+    is_garbage: bool = False
     analysis_timestamp: Optional[str] = None
     error: Optional[str] = None
     
@@ -432,7 +433,7 @@ class MoveOperation:
     target_path: str
     target_filename: str
     full_target: str  # Complete destination path
-    category: str = "organized"  # organized, excluded, error
+    category: str = "organized"  # organized, excluded, error, garbage
     success: bool = False
     error: Optional[str] = None
     
@@ -462,6 +463,7 @@ class Stage5Result:
     skipped_moves: int = 0
     excluded_moves: int = 0
     error_moves: int = 0
+    garbage_moves: int = 0
     dry_run: bool = False
     
     def to_dict(self):
@@ -474,6 +476,7 @@ class Stage5Result:
             'skipped_moves': self.skipped_moves,
             'excluded_moves': self.excluded_moves,
             'error_moves': self.error_moves,
+            'garbage_moves': self.garbage_moves,
             'dry_run': self.dry_run,
             'operations': [op.to_dict() for op in self.operations]
         }
@@ -488,6 +491,8 @@ class Stage5Result:
                 self.excluded_moves += 1
             elif operation.category == "error":
                 self.error_moves += 1
+            elif operation.category == "garbage":
+                self.garbage_moves += 1
             else:
                 self.successful_moves += 1
         elif operation.error:
