@@ -207,6 +207,10 @@ Important:
                 logger.debug("No code block markers, treating whole response as JSON")
                 json_text = response_text.strip()
             
+            # Fix invalid escape sequences that some AI models produce
+            # JSON doesn't recognize \_ as a valid escape, so replace it with just _
+            json_text = json_text.replace(r'\_', '_')
+            
             # Parse JSON
             result = json.loads(json_text)
             logger.debug(f"Successfully parsed JSON with keys: {list(result.keys())}")

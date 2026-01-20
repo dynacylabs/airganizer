@@ -344,6 +344,9 @@ def main() -> int:
                 json.dump(stage1_result.to_dict(), f, indent=2)
             logger.info("Stage 1 results saved")
         
+        # Mark Stage 1 complete
+        progress_manager.complete_stage()
+        
         # Execute Stage 2: AI model discovery and mapping
         logger.info("")
         logger.info("=" * 60)
@@ -392,6 +395,9 @@ def main() -> int:
             else:
                 failed = [m for m in required_models if not stage2_result.model_connectivity.get(m, False)]
                 logger.warning(f"\n  ✗ Some required models not accessible: {', '.join(failed)}")
+        
+        # Mark Stage 2 complete
+        progress_manager.complete_stage()
         
         # Execute Stage 3: AI-powered file analysis (unless skipped)
         if not args.skip_stage3:
@@ -464,6 +470,9 @@ def main() -> int:
             logger.info(f"Stage 3 - Analysis errors: {stage3_result.total_errors}")
             logger.info("=" * 60)
             
+            # Mark Stage 3 complete
+            progress_manager.complete_stage()
+            
             # Execute Stage 4: Taxonomic structure planning (unless skipped)
             if not args.skip_stage4:
                 logger.info("")
@@ -530,6 +539,9 @@ def main() -> int:
                     with open(output_path, 'w') as f:
                         json.dump(output_data, f, indent=2)
                     logger.info("Stage 4 results saved")
+                
+                # Mark Stage 4 complete
+                progress_manager.complete_stage()
                 
                 # Execute Stage 5: Physical file organization (unless skipped)
                 if not args.skip_stage5:
@@ -634,6 +646,9 @@ def main() -> int:
                     logger.info(f"Stage 5 - Error files: {stage5_result.error_moves}")
                     logger.info(f"Stage 5 - Move failures: {stage5_result.failed_moves}")
                     logger.info("=" * 60)
+                    
+                    # Mark Stage 5 complete
+                    progress_manager.complete_stage()
                     
                     # Save complete results if requested (backward compatible)
                     if args.output and not args.stage5_output:
