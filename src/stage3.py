@@ -176,8 +176,29 @@ class Stage3Processor:
         cache_hits = 0
         cache_misses = 0
         
+        # Track previous analysis for cleaner output
+        prev_analysis = None
+        prev_file_name = None
+        
         # Process each file
         for idx, file_info in enumerate(files_to_process, 1):
+            # Show PREVIOUS file's result (if any) before showing current file
+            if prev_analysis and prev_file_name:
+                logger.info("-" * 60)
+                if prev_analysis.error:
+                    logger.info(f"✗ {prev_file_name}")
+                    logger.info(f"  Error: {prev_analysis.error}")
+                else:
+                    logger.info(f"✓ {prev_file_name}")
+                    logger.info(f"  → {prev_analysis.proposed_filename}")
+                    logger.info(f"  {prev_analysis.description[:80]}...")
+                    if prev_analysis.is_garbage:
+                        logger.info(f"  [GARBAGE]")
+            
+            # Show CURRENT file being analyzed
+            logger.info("-" * 60)
+            logger.info(f"[{idx}/{total_files}] Analyzing: {file_info.file_name}")
+            
             # Update progress
             if self.progress_manager:
                 self.progress_manager.update_file_info(
@@ -187,12 +208,6 @@ class Stage3Processor:
                     f"Size: {file_info.file_size} bytes"
                 )
                 self.progress_manager.update_stage_progress(idx)
-            
-            logger.info("-" * 60)
-            logger.info(f"File {idx}/{total_files}: {file_info.file_name}")
-            logger.info(f"  Path: {file_info.file_path}")
-            logger.info(f"  MIME: {file_info.mime_type}")
-            logger.info(f"  Size: {file_info.file_size} bytes")
             
             # Try to load from per-file cache first
             analysis = None
@@ -242,16 +257,24 @@ class Stage3Processor:
                 if use_cache and self.cache_manager.enabled:
                     self.cache_manager.save_stage3_file_cache(analysis)
             
-            # Log results
-            if analysis.error:
-                logger.error(f"  ✗ Analysis failed: {analysis.error}")
-            else:
-                logger.info(f"  ✓ Analysis complete")
-                logger.info(f"    Proposed name: {analysis.proposed_filename}")
-                logger.info(f"    Description: {analysis.description[:100]}...")
-                logger.info(f"    Tags: {', '.join(analysis.tags)}")
+            # Store for next iteration (to display after next file starts analyzing)
+            prev_analysis = analysis
+            prev_file_name = file_info.file_name
             
             result.add_analysis(analysis)
+        
+        # Show LAST file's result
+        if prev_analysis and prev_file_name:
+            logger.info("-" * 60)
+            if prev_analysis.error:
+                logger.info(f"✗ {prev_file_name}")
+                logger.info(f"  Error: {prev_analysis.error}")
+            else:
+                logger.info(f"✓ {prev_file_name}")
+                logger.info(f"  → {prev_analysis.proposed_filename}")
+                logger.info(f"  {prev_analysis.description[:80]}...")
+                if prev_analysis.is_garbage:
+                    logger.info(f"  [GARBAGE]")
         
         # Save complete Stage 3 result to cache
         if use_cache and self.cache_manager.enabled:
