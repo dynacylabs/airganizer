@@ -422,3 +422,75 @@ class Stage4Result:
                 unified_data.append(data)
         
         return unified_data
+
+
+@dataclass
+class MoveOperation:
+    """Records a file move operation."""
+    
+    source_path: str
+    target_path: str
+    target_filename: str
+    full_target: str  # Complete destination path
+    category: str = "organized"  # organized, excluded, error
+    success: bool = False
+    error: Optional[str] = None
+    
+    def to_dict(self):
+        """Convert to dictionary."""
+        return {
+            'source_path': self.source_path,
+            'target_path': self.target_path,
+            'target_filename': self.target_filename,
+            'full_target': self.full_target,
+            'category': self.category,
+            'success': self.success,
+            'error': self.error
+        }
+
+
+@dataclass
+class Stage5Result:
+    """Results from Stage 5: Physical file organization."""
+    
+    stage4_result: Stage4Result
+    destination_root: str
+    operations: List[MoveOperation] = field(default_factory=list)
+    total_files: int = 0
+    successful_moves: int = 0
+    failed_moves: int = 0
+    skipped_moves: int = 0
+    excluded_moves: int = 0
+    error_moves: int = 0
+    dry_run: bool = False
+    
+    def to_dict(self):
+        """Convert to dictionary."""
+        return {
+            'destination_root': self.destination_root,
+            'total_files': self.total_files,
+            'successful_moves': self.successful_moves,
+            'failed_moves': self.failed_moves,
+            'skipped_moves': self.skipped_moves,
+            'excluded_moves': self.excluded_moves,
+            'error_moves': self.error_moves,
+            'dry_run': self.dry_run,
+            'operations': [op.to_dict() for op in self.operations]
+        }
+    
+    def add_operation(self, operation: MoveOperation) -> None:
+        """Add a move operation and update statistics."""
+        self.operations.append(operation)
+        self.total_files += 1
+        
+        if operation.success:
+            if operation.category == "excluded":
+                self.excluded_moves += 1
+            elif operation.category == "error":
+                self.error_moves += 1
+            else:
+                self.successful_moves += 1
+        elif operation.error:
+            self.failed_moves += 1
+        else:
+            self.skipped_moves += 1

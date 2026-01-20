@@ -9,9 +9,9 @@ from datetime import datetime
 
 from .models import (
     FileInfo, Stage1Result, Stage2Result, ModelInfo,
-    FileAnalysis, Stage3Result, TaxonomyNode, FileAssignment, Stage4Result
+    FileAnalysis, Stage3Result, TaxonomyNode, FileAssignment, Stage4Result,
+    MoveOperation, Stage5Result
 )
-from .stage5 import Stage5Result
 
 
 logger = logging.getLogger(__name__)
