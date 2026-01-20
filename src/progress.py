@@ -74,9 +74,9 @@ class ProgressManager:
             total=self.total_stages
         )
         self.stage_task_id = self.progress.add_task(
-            "[yellow]Stage Progress",
+            "[yellow]Current Stage",
             total=100,
-            visible=False
+            visible=True  # Always visible
         )
         
         # Start live display
@@ -98,27 +98,34 @@ class ProgressManager:
         """Get the display with file info, logs, and progress bars."""
         components = []
         
-        # Recent logs panel
+        # Recent logs panel - ALWAYS show it with fixed height (like Docker)
+        log_text = Text()
         if self.recent_logs:
-            log_text = Text()
             for log_line in list(self.recent_logs):
                 log_text.append(log_line)
                 log_text.append("\n")
-            
-            log_panel = Panel(
-                log_text,
-                title="[bold yellow]Recent Activity",
-                border_style="yellow",
-                padding=(0, 1),
-                height=self.max_log_lines + 2
-            )
-            components.append(log_panel)
-            components.append(Text(""))  # Spacing
+        else:
+            # Show placeholder when no logs yet
+            log_text.append("Initializing...\n", style="dim")
         
-        # File info panel (optional, can be disabled if logs show enough)
-        # components.append(Text(""))  # Spacing
+        # Pad with empty lines to maintain fixed height
+        current_lines = len(self.recent_logs) if self.recent_logs else 1
+        for _ in range(self.max_log_lines - current_lines):
+            log_text.append("\n")
         
-        # Progress bars
+        log_panel = Panel(
+            log_text,
+            title="[bold cyan]Activity Log",
+            border_style="cyan",
+            padding=(0, 1),
+            height=self.max_log_lines + 2
+        )
+        components.append(log_panel)
+        
+        # Small spacing
+        components.append(Text(""))
+        
+        # Progress bars - ALWAYS show both
         components.append(self.progress)
         
         return Group(*components)
@@ -166,18 +173,19 @@ class ProgressManager:
         
         self.current_stage = stage_num
         
-        # Update stage task
+        # Update stage task - reset to 0 and set new total
         if self.stage_task_id is not None:
             self.progress.update(
                 self.stage_task_id,
                 description=f"[yellow]Stage {stage_num}: {stage_name}",
                 completed=0,
-                total=total_items,
+                total=total_items if total_items > 0 else 100,
                 visible=True
             )
         
-        # Update file info
-        self.update_file_info(f"Starting Stage {stage_num}: {stage_name}")
+        # Refresh display
+        if self.live:
+            self.live.update(self._get_display())
         
     def update_stage_progress(self, completed: int, total: Optional[int] = None):
         """
@@ -194,19 +202,27 @@ class ProgressManager:
             self.progress.update(self.stage_task_id, completed=completed, total=total)
         else:
             self.progress.update(self.stage_task_id, completed=completed)
+        
+        # Refresh display
+        if self.live:
+            self.live.update(self._get_display())
     
     def complete_stage(self):
         """Mark current stage as complete."""
         if not self.enabled:
             return
         
-        # Complete stage task
+        # Complete stage task - set to 100% and keep visible
         if self.stage_task_id is not None:
-            self.progress.update(self.stage_task_id, visible=False)
+            self.progress.update(self.stage_task_id, completed=100)
         
         # Update overall progress
         if self.overall_task_id is not None:
             self.progress.update(self.overall_task_id, advance=1)
+        
+        # Refresh display
+        if self.live:
+            self.live.update(self._get_display())
     
     def set_stage_description(self, description: str):
         """
