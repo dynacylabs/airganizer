@@ -217,8 +217,9 @@ def main() -> int:
         else:
             log_level = config.log_level
         
-        # Use Rich logging when progress bars are enabled (not debug mode)
-        use_rich_logging = not args.debug
+        # Don't use Rich logging when we'll be using progress display
+        # (progress display has its own log handler)
+        use_rich_logging = False  # Disabled - using progress display logging instead
         setup_logging(log_level, use_rich=use_rich_logging)
         
         logger = logging.getLogger(__name__)
@@ -285,6 +286,17 @@ def main() -> int:
         # Progress bars interfere with debug logging
         progress_enabled = not args.debug
         progress_manager = ProgressManager(total_stages=5, enabled=progress_enabled)
+        
+        # If progress is enabled, add custom logging handler to route logs through progress display
+        if progress_enabled:
+            from src.progress import ProgressLoggingHandler
+            progress_handler = ProgressLoggingHandler(progress_manager)
+            progress_handler.setFormatter(logging.Formatter('%(message)s'))
+            progress_handler.setLevel(logging.INFO)
+            
+            # Add handler to root logger
+            root_logger = logging.getLogger()
+            root_logger.addHandler(progress_handler)
         
         # Execute the pipeline with progress tracking
         with progress_manager:

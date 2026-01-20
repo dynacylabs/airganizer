@@ -1,7 +1,8 @@
 """Progress tracking with dual progress bars."""
 
 import logging
-from typing import Optional
+from typing import Optional, List
+from collections import deque
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -11,10 +12,11 @@ from rich.progress import (
     TimeRemainingColumn,
     MofNCompleteColumn
 )
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
+from rich.logging import RichHandler
 
 
 logger = logging.getLogger(__name__)
@@ -23,17 +25,22 @@ logger = logging.getLogger(__name__)
 class ProgressManager:
     """Manages dual progress bars for stage and overall progress."""
     
-    def __init__(self, total_stages: int = 5, enabled: bool = True):
+    def __init__(self, total_stages: int = 5, enabled: bool = True, max_log_lines: int = 10):
         """
         Initialize progress manager.
         
         Args:
             total_stages: Total number of stages in the pipeline
             enabled: Whether to display progress bars
+            max_log_lines: Maximum number of recent log lines to display (default: 10)
         """
         self.total_stages = total_stages
         self.enabled = enabled
+        self.max_log_lines = max_log_lines
         self.console = Console()
+        
+        # Recent logs buffer (circular buffer)
+        self.recent_logs: deque = deque(maxlen=max_log_lines)
         
         # Progress bar setup
         self.progress = Progress(
@@ -88,33 +95,33 @@ class ProgressManager:
         self.live.stop()
         
     def _get_display(self):
-        """Get the display with file info and progress bars."""
-        # File info panel
-        if self.current_file_info:
-            info_text = Text(self.current_file_info, style="white")
-            info_panel = Panel(
-                info_text,
-                title="[bold cyan]Current Operation",
-                border_style="cyan",
-                padding=(0, 1)
-            )
-        else:
-            info_panel = Panel(
-                Text("Initializing...", style="dim"),
-                title="[bold cyan]Current Operation",
-                border_style="dim",
-                padding=(0, 1)
-            )
+        """Get the display with file info, logs, and progress bars."""
+        components = []
         
-        # Combine with progress bars
-        from rich.console import Group
-        display_group = Group(
-            info_panel,
-            Text(""),  # Spacing
-            self.progress
-        )
+        # Recent logs panel
+        if self.recent_logs:
+            log_text = Text()
+            for log_line in list(self.recent_logs):
+                log_text.append(log_line)
+                log_text.append("\n")
+            
+            log_panel = Panel(
+                log_text,
+                title="[bold yellow]Recent Activity",
+                border_style="yellow",
+                padding=(0, 1),
+                height=self.max_log_lines + 2
+            )
+            components.append(log_panel)
+            components.append(Text(""))  # Spacing
         
-        return display_group
+        # File info panel (optional, can be disabled if logs show enough)
+        # components.append(Text(""))  # Spacing
+        
+        # Progress bars
+        components.append(self.progress)
+        
+        return Group(*components)
     
     def update_file_info(self, info: str):
         """
@@ -127,6 +134,21 @@ class ProgressManager:
             return
         
         self.current_file_info = info
+        if self.live:
+            self.live.update(self._get_display())
+    
+    def add_log(self, message: str, style: str = "white"):
+        """
+        Add a log message to the display.
+        
+        Args:
+            message: Log message
+            style: Rich style for the message
+        """
+        if not self.enabled:
+            return
+        
+        self.recent_logs.append(Text(message, style=style))
         if self.live:
             self.live.update(self._get_display())
     
@@ -207,3 +229,33 @@ class ProgressManager:
         """Context manager exit."""
         self.stop()
         return False
+
+
+class ProgressLoggingHandler(logging.Handler):
+    """Custom logging handler that routes logs to ProgressManager."""
+    
+    def __init__(self, progress_manager: ProgressManager):
+        """
+        Initialize the handler.
+        
+        Args:
+            progress_manager: ProgressManager instance to send logs to
+        """
+        super().__init__()
+        self.progress_manager = progress_manager
+        self.level_styles = {
+            logging.DEBUG: "dim",
+            logging.INFO: "white",
+            logging.WARNING: "yellow",
+            logging.ERROR: "red",
+            logging.CRITICAL: "bold red"
+        }
+    
+    def emit(self, record: logging.LogRecord):
+        """Emit a log record to the progress manager."""
+        try:
+            msg = self.format(record)
+            style = self.level_styles.get(record.levelno, "white")
+            self.progress_manager.add_log(msg, style)
+        except Exception:
+            self.handleError(record)
