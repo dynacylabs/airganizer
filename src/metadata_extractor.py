@@ -19,21 +19,49 @@ def extract_exif_data(file_path: Path) -> Dict[str, Any]:
         file_path: Path to the image file
         
     Returns:
-        Dictionary containing EXIF data
+        Dictionary containing EXIF data (sanitized, no binary blobs)
     """
     exif_data = {}
+    
+    # Fields known to contain binary data - skip these entirely
+    BINARY_FIELDS = {
+        'JPEGThumbnail', 'TIFFThumbnail', 'Filename',
+        'EXIF MakerNote', 'MakerNote', 'PrintImageMatching',
+        'InteropOffset', 'ExifOffset', 'GPSInfo',
+        'ApplicationNotes', 'UserComment'  # Can contain binary
+    }
+    
+    def _sanitize_value(value: Any) -> str:
+        """Sanitize a value to remove binary data and limit length."""
+        try:
+            value_str = str(value)
+            
+            # Check if string contains binary data (null bytes or lots of unprintable chars)
+            if '\x00' in value_str or sum(1 for c in value_str if not c.isprintable()) > len(value_str) * 0.1:
+                # More than 10% unprintable chars = binary data, skip it
+                return None
+            
+            # Limit length to prevent huge text fields
+            if len(value_str) > 500:
+                value_str = value_str[:500] + "... (truncated)"
+            
+            return value_str
+        except:
+            return None
     
     try:
         with open(file_path, 'rb') as f:
             tags = exifread.process_file(f, details=False)
             
             for tag, value in tags.items():
-                # Skip thumbnails and makernotes
-                if tag not in ('JPEGThumbnail', 'TIFFThumbnail', 'Filename', 'EXIF MakerNote'):
-                    try:
-                        exif_data[tag] = str(value)
-                    except:
-                        pass
+                # Skip known binary fields
+                if tag in BINARY_FIELDS:
+                    continue
+                
+                # Sanitize and add value
+                sanitized = _sanitize_value(value)
+                if sanitized:
+                    exif_data[tag] = sanitized
         
         # Also try PIL for additional metadata
         try:
@@ -42,12 +70,20 @@ def extract_exif_data(file_path: Path) -> Dict[str, Any]:
                     pil_exif = img._getexif()
                     if pil_exif:
                         for tag_id, value in pil_exif.items():
-                            try:
-                                tag_name = Image.ExifTags.TAGS.get(tag_id, tag_id)
-                                if tag_name not in exif_data:
-                                    exif_data[f'PIL_{tag_name}'] = str(value)
-                            except:
-                                pass
+                            tag_name = Image.ExifTags.TAGS.get(tag_id, tag_id)
+                            
+                            # Skip binary fields
+                            if tag_name in BINARY_FIELDS or str(tag_name) in BINARY_FIELDS:
+                                continue
+                            
+                            # Skip if already have this field from exifread
+                            if tag_name in exif_data or f'PIL_{tag_name}' in exif_data:
+                                continue
+                            
+                            # Sanitize and add
+                            sanitized = _sanitize_value(value)
+                            if sanitized:
+                                exif_data[f'PIL_{tag_name}'] = sanitized
         except:
             pass
                 
@@ -119,22 +155,43 @@ def run_binwalk(file_path: Path) -> str:
         file_path: Path to the file
         
     Returns:
-        Binwalk output as string
+        Binwalk output as string (sanitized to remove binary data)
     """
     try:
         # Run binwalk with basic signature scan
+        # Note: We use text=False to avoid decoding issues with binary output
         result = subprocess.run(
             ['binwalk', str(file_path)],
             capture_output=True,
-            text=True,
+            text=False,  # Capture as bytes to avoid encoding issues
             timeout=30  # 30 second timeout
         )
         
         if result.returncode == 0:
-            return result.stdout
+            # Decode output with error handling, replacing problematic bytes
+            output = result.stdout.decode('utf-8', errors='replace')
+            
+            # Sanitize: Remove null bytes and control characters (except newlines/tabs)
+            # Keep only printable ASCII and common whitespace
+            sanitized = ''.join(
+                char for char in output 
+                if char.isprintable() or char in '\n\t\r'
+            )
+            
+            # Limit output length to prevent token waste (first 2000 chars should be enough)
+            if len(sanitized) > 2000:
+                sanitized = sanitized[:2000] + "\n... (output truncated)"
+            
+            return sanitized
         else:
-            logger.debug(f"Binwalk returned non-zero for {file_path}: {result.stderr}")
-            return f"Binwalk error: {result.stderr}"
+            # Also sanitize stderr
+            stderr = result.stderr.decode('utf-8', errors='replace')
+            stderr_clean = ''.join(
+                char for char in stderr 
+                if char.isprintable() or char in '\n\t\r'
+            )
+            logger.debug(f"Binwalk returned non-zero for {file_path}: {stderr_clean}")
+            return f"Binwalk error: {stderr_clean}"
     
     except subprocess.TimeoutExpired:
         logger.warning(f"Binwalk timed out for {file_path}")
