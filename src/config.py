@@ -206,7 +206,7 @@ class Config:
     @property
     def stage4_batch_size(self) -> int:
         """Get batch size for Stage 4 processing."""
-        return self.get('stage4.batch_size', 100)
+        return self.get('stage4.batch_size', 25)
     
     @property
     def stage4_temperature(self) -> float:

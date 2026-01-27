@@ -93,10 +93,15 @@ Current categories:
             if not analysis:
                 continue
             
-            prompt += f"""{i}. File: {file_info.get('file_name', 'unknown')}
-   MIME: {file_info.get('mime_type', 'unknown')}
-   Description: {analysis.get('description', 'N/A')}
-   Tags: {', '.join(analysis.get('tags', []))}
+            # Keep descriptions concise - truncate if too long
+            desc = analysis.get('description', 'N/A')
+            if len(desc) > 100:
+                desc = desc[:97] + "..."
+            
+            # Limit tags to top 5
+            tags = analysis.get('tags', [])[:5]
+            
+            prompt += f"{i}. {file_info.get('file_name', 'unknown')} | {desc} | Tags: {', '.join(tags)}\n"
 
 """
         
