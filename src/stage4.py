@@ -100,10 +100,9 @@ Current categories:
 
 """
         
-        if len(files_data) > 100:
-            prompt += f"\n... and {len(files_data) - 100} more files to organize\n\n"
+        # No need to say "more files" since we're showing all files in the batch now
         
-        prompt += """
+        prompt += f"""
 Please respond with a JSON object containing:
 1. "taxonomy": Array of category objects with:
    - "path": Full path (e.g., "Documents/Work/Reports")
@@ -116,41 +115,49 @@ Please respond with a JSON object containing:
    - "target_path": The category path where it belongs
    - "reasoning": Brief explanation why it goes there
 
+CRITICAL: You MUST provide assignments for ALL {len(files_data)} files listed above. 
+Do not skip any files. Every file must be assigned to a category.
+
 Example response:
-{
+{{
   "taxonomy": [
-    {
+    {{
       "path": "Photos",
       "category": "Photos",
       "description": "All photographic images",
       "subcategories": ["Photos/Nature", "Photos/People", "Photos/Architecture"]
-    },
-    {
+    }},
+    {{
       "path": "Photos/Nature",
       "category": "Nature",
       "description": "Natural landscapes, wildlife, and outdoor scenes",
       "subcategories": ["Photos/Nature/Wildlife", "Photos/Nature/Landscapes"]
-    },
-    {
+    }},
+    {{
       "path": "Photos/Nature/Wildlife",
       "category": "Wildlife",
       "description": "Animals in their natural habitats",
       "subcategories": []
-    }
+    }}
   ],
   "assignments": [
-    {
+    {{
       "file_index": 1,
       "target_path": "Photos/Nature/Wildlife",
       "reasoning": "Contains image of golden eagle, fits wildlife category"
-    }
+    }},
+    {{
+      "file_index": 2,
+      "target_path": "Photos/People",
+      "reasoning": "Portrait photograph of person"
+    }}
   ]
-}
+}}
 
 Important:
 - Create as many levels as needed (not limited to 2-3 levels)
 - Be specific with categories (e.g., "Wildlife/Birds/Raptors" not just "Animals")
-- Each file must be assigned to exactly one category
+- YOU MUST ASSIGN ALL {len(files_data)} FILES - create an assignment entry for each file index from 1 to {len(files_data)}
 - Categories should form a proper tree (each has one parent except root)
 - Use descriptive, professional category names
 """
@@ -480,6 +487,7 @@ Important:
                 logger.info(f"  Total taxonomy nodes: {len(result.taxonomy)}")
                 
                 # Create file assignments
+                assigned_indices = set()
                 for assign_data in parsed['assignments']:
                     file_idx = assign_data['file_index'] - 1  # Convert to 0-based
                     if 0 <= file_idx < len(batch):
@@ -493,8 +501,28 @@ Important:
                             reasoning=assign_data.get('reasoning', '')
                         )
                         result.add_file_assignment(assignment)
+                        assigned_indices.add(file_idx)
                 
                 logger.info(f"  Assigned {len(parsed['assignments'])} files")
+                
+                # Warn if not all files were assigned
+                if len(assigned_indices) < len(batch):
+                    missing_count = len(batch) - len(assigned_indices)
+                    logger.warning(f"  AI did not assign {missing_count} files from this batch!")
+                    logger.warning(f"  Assigning unassigned files to 'Uncategorized' as fallback...")
+                    
+                    # Assign missing files to Uncategorized
+                    for file_idx in range(len(batch)):
+                        if file_idx not in assigned_indices:
+                            file_data = batch[file_idx]
+                            analysis = file_data.get('analysis', {})
+                            assignment = FileAssignment(
+                                file_path=file_data['file_info']['file_path'],
+                                target_path='Uncategorized',
+                                proposed_filename=analysis.get('proposed_filename', file_data['file_info']['file_name']),
+                                reasoning='Not assigned by AI - fallback to Uncategorized'
+                            )
+                            result.add_file_assignment(assignment)
                 
             except Exception as e:
                 logger.error(f"Error processing batch {batch_num + 1}: {e}")
