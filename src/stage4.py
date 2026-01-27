@@ -222,7 +222,11 @@ Important:
         except Exception as e:
             logger.error(f"Failed to parse taxonomy response: {e}")
             logger.error(f"Response length: {len(response_text)} characters")
-            logger.debug(f"Raw response (first 1000 chars): {response_text[:1000]}")
+            logger.info(f"Response preview (first 500 chars):")
+            logger.info(f"{response_text[:500]}")
+            if len(response_text) > 500:
+                logger.info(f"Response preview (last 500 chars):")
+                logger.info(f"{response_text[-500:]}")
             
             # Return minimal fallback structure
             return {
