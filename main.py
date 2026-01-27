@@ -477,7 +477,7 @@ def main() -> int:
                     logger.info("STAGE 4: Taxonomic Structure Planning")
                     logger.info("=" * 60)
                 
-                    stage3_processor = Stage3Processor(config, cache_manager, progress_manager)
+                    stage4_processor = Stage4Processor(config, cache_manager, progress_manager)
                     # Use CLI arg if specified, otherwise use config default
                     batch_size = args.batch_size if args.batch_size else config.stage4_batch_size
                     stage4_result = stage4_processor.process(
