@@ -993,15 +993,15 @@ stage4:
   #     - May hit token limits
   #
   # For collections:
-  #   - <100 files: Use 25-50
-  #   - 100-1000 files: Use 25-50
-  #   - >1000 files: Use 25-50
-  #   - Local models (Ollama): Use 25 (smaller context windows)
-  #   - Cloud models (GPT-4): Can use 50-100
+  #   - <100 files: Use 10-25
+  #   - 100-1000 files: Use 10-25
+  #   - >1000 files: Use 10-25
+  #   - Local models (Ollama): Use 10 (smaller context windows)
+  #   - Cloud models (GPT-4): Can use 25-50
   #
-  # Performance: 25 files ≈ 10-30 seconds per batch (local models)
-  # Cost: ~$0.01-0.02 per 25 files with GPT-4o
-  batch_size: 25
+  # Performance: 10 files ≈ 10-30 seconds per batch (local models)
+  # Cost: ~$0.005-0.01 per 10 files with GPT-4o
+  batch_size: 10
   
   # ----------------------------------------------------------------------------
   # AI generation parameters for taxonomy creation
