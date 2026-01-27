@@ -1098,15 +1098,19 @@ stage4:
     #   - 300: Very patient, for huge collections
     #
     # Factors affecting time:
-    #   - Batch size: 100 files ≈ 30-60 seconds
+    #   - Batch size: 25 files ≈ 30-90 seconds (local models)
     #   - Taxonomy complexity: Deep hierarchies take longer
     #   - Model speed: GPT-4 varies, local models slower
     #
     # If timing out frequently:
-    #   Solution 1: Reduce batch_size
+    #   Solution 1: Reduce batch_size (try 10-15 files)
     #   Solution 2: Increase timeout
     #   Solution 3: Use faster model for mapping_model
-    timeout: 120
+    #
+    # Recommendations:
+    #   - Local models (Ollama): 300-600 seconds
+    #   - Cloud models (GPT-4): 120-300 seconds
+    timeout: 300
 
 # ============================================================================
 # SECTION 7: STAGE 5 - PHYSICAL FILE ORGANIZATION
