@@ -84,8 +84,9 @@ Current categories:
 
 """
         
-        # Include file summaries
-        for i, file_data in enumerate(files_data[:100], 1):  # Limit to 100 for context
+        # Include file summaries - show ALL files in the batch (no arbitrary limit)
+        # The batch size itself should be the limiting factor
+        for i, file_data in enumerate(files_data, 1):
             file_info = file_data.get('file_info', {})
             analysis = file_data.get('analysis', {})
             
@@ -432,7 +433,8 @@ Important:
                 self.progress_manager.update_file_info(
                     f"[Batch {batch_num + 1}/{total_batches}] Planning taxonomy for files {start_idx + 1}-{end_idx}\n"
                     f"Batch size: {len(batch)} files\n"
-                    f"Total categories so far: {len(result.taxonomy)}"
+                    f"Total categories so far: {len(result.taxonomy)}\n"
+                    f"Total files assigned so far: {result.total_assigned}"
                 )
                 self.progress_manager.update_stage_progress(batch_num + 1)
             
