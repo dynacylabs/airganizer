@@ -948,9 +948,9 @@ stage3:
     #
     # Recommendations:
     #   - Fast internet + online models: 30-60 seconds
-    #   - Slow internet or local models: 120-180 seconds
-    #   - Vision models (images): 60-120 seconds (more processing)
-    timeout: 60
+    #   - Slow internet or local models: 120-300 seconds
+    #   - Vision models (images): 120-300 seconds (more processing)
+    timeout: 300
 
 # ============================================================================
 # SECTION 6: STAGE 4 - TAXONOMIC STRUCTURE PLANNING

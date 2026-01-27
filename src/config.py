@@ -200,7 +200,7 @@ class Config:
     @property
     def stage3_timeout(self) -> int:
         """Get API timeout for Stage 3 in seconds."""
-        return self.get('stage3.ai.timeout', 60)
+        return self.get('stage3.ai.timeout', 300)
     
     # Stage 4 settings
     @property
