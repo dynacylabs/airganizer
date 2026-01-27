@@ -182,6 +182,14 @@ Important:
         try:
             # Extract JSON from response
             logger.debug(f"Parsing taxonomy response (length: {len(response_text)} chars)")
+            
+            # Check if response is empty or whitespace
+            if not response_text or not response_text.strip():
+                logger.error("Response is empty or only whitespace")
+                raise ValueError("Empty response text")
+            
+            logger.debug(f"Response starts with: '{response_text[:100]}'")
+            
             if "```json" in response_text:
                 logger.debug("Found JSON code block in response")
                 start = response_text.find("```json") + 7
@@ -195,6 +203,9 @@ Important:
             else:
                 logger.debug("No code block markers, treating whole response as JSON")
                 json_text = response_text.strip()
+            
+            logger.debug(f"Extracted JSON length: {len(json_text)} chars")
+            logger.debug(f"JSON starts with: '{json_text[:100]}'")
             
             result = json.loads(json_text)
             logger.debug(f"Successfully parsed JSON with keys: {list(result.keys())}")
@@ -210,7 +221,8 @@ Important:
             
         except Exception as e:
             logger.error(f"Failed to parse taxonomy response: {e}")
-            logger.debug(f"Raw response: {response_text[:500]}")
+            logger.error(f"Response length: {len(response_text)} characters")
+            logger.debug(f"Raw response (first 1000 chars): {response_text[:1000]}")
             
             # Return minimal fallback structure
             return {
@@ -226,7 +238,7 @@ Important:
                     {
                         'file_index': i + 1,
                         'target_path': 'Uncategorized',
-                        'reasoning': 'Automatic fallback'
+                        'reasoning': 'Automatic fallback due to parse error'
                     }
                     for i in range(len(files_data))
                 ]
@@ -317,7 +329,14 @@ Important:
                 timeout=self.config.stage4_timeout
             )
             response.raise_for_status()
-            return response.json()['response']
+            result_text = response.json().get('response', '')
+            
+            # Check if response is empty
+            if not result_text or not result_text.strip():
+                logger.warning(f"Ollama returned empty response for taxonomy generation")
+                raise ValueError("Empty response from Ollama")
+            
+            return result_text
         
         else:
             raise ValueError(f"Unsupported provider: {model.provider}")
@@ -463,6 +482,14 @@ Important:
             logger.info("Calling AI to generate/update taxonomy...")
             try:
                 response_text = self._call_taxonomy_ai(prompt, mapping_model)
+                logger.info(f"  Received response: {len(response_text)} characters")
+                
+                # Log first part of response for debugging
+                if not response_text or not response_text.strip():
+                    logger.error("  AI returned empty response!")
+                    raise ValueError("Empty response from AI")
+                
+                logger.debug(f"  Response preview: {response_text[:200]}...")
                 
                 # Parse response
                 parsed = self._parse_taxonomy_response(response_text, batch)
