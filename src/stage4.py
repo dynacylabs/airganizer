@@ -98,7 +98,7 @@ Current categories:
    Description: {analysis.get('description', 'N/A')}
    Tags: {', '.join(analysis.get('tags', []))}
 
-""""""
+"""
         
         # No need to say "more files" since we're showing all files in the batch now
         
